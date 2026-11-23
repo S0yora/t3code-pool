@@ -305,7 +305,7 @@ jobs:
     needs: [preflight]
     if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -364,7 +364,7 @@ jobs:
     needs: [preflight]
     if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -670,7 +670,7 @@ jobs:
       relay_url: ${{ needs.relay_public_config.outputs.relay_url }}
       relay_client_tracing: ${{ needs.relay_public_config.outputs.has_tracing == 'true' }}
       label: macOS arm64
-      runner: macos-15
+      runner: macos-26
       platform: mac
       target: dmg
       arch: arm64
@@ -697,7 +697,7 @@ jobs:
       relay_url: ${{ needs.relay_public_config.outputs.relay_url }}
       relay_client_tracing: ${{ needs.relay_public_config.outputs.has_tracing == 'true' }}
       label: macOS x64
-      runner: macos-15
+      runner: macos-15-intel
       platform: mac
       target: dmg
       arch: x64
