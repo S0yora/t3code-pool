@@ -1,108 +1,92 @@
-<p align="center">
-  <a href="https://t3.codes">
-    <img src="./assets/prod/t3-black-web-icon-192x192.png" width="80" height="80" alt="T3 Code logo" />
-  </a>
-</p>
-
-<h1 align="center">T3 Code</h1>
-
-<p align="center">The open-source control plane for coding agents.</p>
+<h1 align="center">T3 Code Pool</h1>
 
 <p align="center">
-  <a href="https://t3.codes/download"><strong>Download</strong></a> ·
-  <a href="https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824">iOS</a> ·
-  <a href="https://play.google.com/store/apps/details?id=com.t3tools.t3code">Android</a> ·
-  <a href="https://app.t3.codes">Web</a> ·
-  <a href="./docs/README.md">Docs</a> ·
-  <a href="https://discord.gg/jn4EGJjrvv">Discord</a>
+  Fork of <a href="https://github.com/pingdotgg/t3code">T3 Code</a> with multi-account pools, automatic rate-limit failover, and device sync.
 </p>
 
 <p align="center">
-  <a href="https://t3.codes">
-    <img src="./.github/readme/hero.webp" width="100%" alt="T3 Code on desktop with a finished Claude thread, next to the phone app asking to approve a command from Codex" />
-  </a>
+  <a href="https://github.com/S0yora/t3code-pool/releases"><strong>Releases</strong></a> |
+  <a href="#how-it-works">How it works</a> |
+  <a href="#device-sync">Device sync</a> |
+  <a href="#install">Install</a> |
+  <a href="./POOL.md">Technical notes</a>
 </p>
 
-T3 Code runs the coding agents on your machine and gives them one fast interface. Start a thread at your desk, then approve the next step from your phone.
+<p align="center">
+  <img src="./docs/assets/pool-hero.png" width="800" alt="Chat model picker before and after pooling multiple accounts" />
+</p>
 
-It works with Claude Code, Codex, Cursor, OpenCode, Grok Build, Antigravity, Kiro, Pi, Muse Code, fx, and any [ACP](./docs/user/providers-acp.md) agent. If an agent is set up on your computer, T3 Code can control it.
+## Why this fork exists
 
-## What you get
+If you use multiple Codex, Antigravity, or Claude accounts, hitting a usage limit mid-thread means stopping, switching profiles by hand, and starting over.
 
-- **Your subscriptions.** T3 Code does not resell tokens. It drives the agents you are already signed in to.
-- **Every agent in one place.** Change models in the middle of a thread. Let Claude hand a task to Codex.
-- **Desktop, web, and phone.** One server, and every client shows the same threads. There are apps for iOS and Android.
-- **Remote ready.** Run agents on any machine. Connect over your local network, Tailscale, or [T3 Connect](./docs/user/remote-access.md).
-- **Git built in.** Each thread can work in its own worktree. Review the diff, then commit, push, and open a pull request with one button.
-- **Fast.** Performance is a feature here. We measure it, and we treat a dropped frame as a bug.
-- **Open.** MIT licensed. If you don't like something, fork it.
+T3 Code Pool groups accounts of the same provider into one pool. You pick one model in the chat selector, and T3 Code handles account selection and rate limits in the background. It runs on your own signed-in accounts, with no proxy or token reselling.
+
+<p align="center">
+  <img src="./docs/assets/provider-pools.png" width="100%" alt="Account pools in T3 Code Settings" />
+</p>
+
+## How it works
+
+Each pool sits in front of two or more accounts of the same provider (Codex, Antigravity, Claude, and others).
+
+- **Routing strategy.** Choose how new threads pick an account: **Least used**, **Round robin**, or **Priority**.
+- **Sticky threads.** A thread stays on the same account across turns so session state and context do not reset.
+- **Auto-failover.** When an account hits a rate limit or quota error, it goes on cooldown and the turn automatically switches to the next ready account.
+- **Clean picker.** Pooled accounts stay grouped in Settings and appear as a single entry in the chat model picker across desktop, web, and mobile.
+
+<p align="center">
+  <img src="./docs/assets/pool-editor.png" width="520" alt="Edit pool dialog in T3 Code" />
+</p>
+
+## Device sync
+
+If you run T3 Code on more than one machine, set one server (such as a Linux VM or home server) as a **Hub** and connect your laptops or desktops as **Clients**.
+
+- **Shared cooldowns.** When an account hits a limit on one machine, the other machines know immediately and skip it.
+- **Encrypted vault.** Push pools and optional credentials from your main machine and pull them on another. Bundles are encrypted with AES-256-GCM before leaving your device.
+- **Cross-OS safe.** Pulling between Windows, macOS, and Linux keeps local binary and config paths intact instead of overwriting them with paths from another OS.
+
+<p align="center">
+  <img src="./docs/assets/hub-client-sync.png" width="100%" alt="Pool sync settings in T3 Code" />
+</p>
 
 ## Install
 
-### Desktop app
+Download builds from [GitHub Releases](https://github.com/S0yora/t3code-pool/releases):
 
-[Download T3 Code](https://t3.codes/download) for macOS, Windows, or Linux. You can also use a package manager:
+| Platform  | Available builds                                        |
+| --------- | ------------------------------------------------------- |
+| Windows   | `.exe` installer                                        |
+| macOS     | `.dmg` (Apple Silicon and Intel)                        |
+| Linux     | `.AppImage`, `.deb`, and standalone `t3` server binary  |
+| Android   | Signed `T3-Code-*-android-arm64-v8a.apk`                |
+| Web / iOS | Open your T3 Code server URL in a browser or iOS Safari |
 
-| Platform       | Command                                                              |
-| -------------- | -------------------------------------------------------------------- |
-| macOS          | `brew install --cask t3-code`                                        |
-| Windows        | `winget install T3Tools.T3Code` or `scoop install extras/t3code`     |
-| Arch Linux     | `yay -S t3code-bin`                                                  |
-| Nix            | `nix profile add github:NixOS/nixpkgs/nixos-unstable#t3code`         |
-| Debian, Ubuntu | `.deb` from [Releases](https://github.com/pingdotgg/t3code/releases) |
+## Quick setup
 
-### Command line
+### Create a pool
 
-This installs the `t3` command. Run `t3` to start the server and open the web app.
+1. Sign in to two or more accounts of the same provider in **Settings / Providers**.
+2. Scroll to **Account pools**, click **Add pool**, pick a routing strategy, and select the accounts to include.
+3. Choose the pool in the chat model picker.
 
-```bash
-curl -fsSL https://t3.codes/install.sh | sh
-```
+### Sync across machines (optional)
 
-On Windows, in PowerShell:
+1. On your server, open **Settings / Providers / Pool sync**, turn on **Sync across devices**, set **Role** to **Hub**, and set a sync token and vault passphrase under **Advanced**.
+2. On your desktop or laptop, enable sync, set **Role** to **Client**, enter the **Hub URL**, and use the same token and passphrase.
+3. Click **Push vault** on your main machine, then **Pull vault** on your other machines.
 
-```powershell
-irm https://t3.codes/install.ps1 | iex
-```
+## More info
 
-To try it once without an install, run `npx t3@latest`.
+- [Technical notes and rebasing on upstream](./POOL.md)
+- [Upstream T3 Code documentation](./docs/README.md)
 
-### Phone
+<br />
 
-Get the app from the [App Store](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824) or [Google Play](https://play.google.com/store/apps/details?id=com.t3tools.t3code). Then follow [remote access](./docs/user/remote-access.md) to connect it to your computer.
-
-### Sign in to an agent
-
-T3 Code needs one agent that is installed and signed in. For example, install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`, or install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`.
-
-[Provider setup](./docs/user/install.md#providers) has the steps for each agent. [Install T3 Code](./docs/user/install.md) covers nightly builds, AppImage, WSL, and NixOS.
-
-## "Wait, what are you selling me?"
-
-Nothing. We built T3 Code because we wanted the best possible development experience with agents. We were inspired by existing solutions like the Codex desktop app, Conductor, Claude Desktop and Cursor Glass, but none met our bar.
-
-We wanted something performant, remote-ready, and truly open. If we ever go the wrong direction, we want you to have everything you need to fork and build the tool that you want.
-
-## Documentation
-
-- [Install and first run](./docs/user/install.md)
-- [Remote access from a phone or another machine](./docs/user/remote-access.md)
-- [Permission modes](./docs/user/permission-modes.md)
-- [Source control](./docs/user/source-control.md)
-- [Connect outside agents over MCP](./docs/user/outside-agents.md)
-- [FAQ](./docs/user/faq.md)
-
-[All docs](./docs/README.md) has the full list.
-
-## Contributing
-
-We have limited review capacity. Small, focused fixes are the most likely to be merged. Features need an approved discussion first.
-
-- Read [CONTRIBUTING.md](./CONTRIBUTING.md) before you report a bug or open a pull request.
-- Put feature requests in [Ideas](https://github.com/pingdotgg/t3code/discussions/categories/ideas).
-- Build from source with the [development runbook](./docs/operations/00_development.md#first-checkout). The [architecture overview](./docs/internals/01_architecture.md) explains how it works.
-- Get help in [Discord](https://discord.gg/jn4EGJjrvv).
-
-## License
-
-[MIT](./LICENSE)
+<p align="center">
+  <a href="https://github.com/pingdotgg/t3code">
+    <img src="./assets/prod/t3-black-web-icon-192x192.png" width="36" height="36" alt="T3 Code" />
+  </a><br />
+  <sub>Fork of <a href="https://github.com/pingdotgg/t3code">pingdotgg/t3code</a>. Licensed under <a href="./LICENSE">MIT</a>.</sub>
+</p>
