@@ -149,4 +149,84 @@ describe("ProviderPoolService", () => {
         }).pipe(Effect.provide(makeTestLayer(settings, providers)));
       }),
   );
+
+  it("sanitizes foreign-OS paths and preserves local path overrides on pull", () => {
+    const winToLinux = ProviderPoolService.mergePulledProviderInstances(
+      {
+        codex_local: {
+          driver: ProviderDriverKind.make("codex"),
+          enabled: true,
+          config: { binaryPath: "/usr/local/bin/codex", homePath: "/home/ai/.codex" },
+        },
+      },
+      {
+        codex_local: {
+          driver: ProviderDriverKind.make("codex"),
+          enabled: true,
+          config: {
+            binaryPath: "C:\\Users\\dev\\codex.exe",
+            homePath: "C:\\Users\\dev\\.codex",
+            launchArgs: "--full-auto",
+          },
+        },
+        codex_new: {
+          driver: ProviderDriverKind.make("codex"),
+          enabled: true,
+          config: {
+            binaryPath: "C:\\Tools\\codex.exe",
+            homePath: "C:\\Users\\dev\\.codex-2",
+            shadowHomePath: "\\\\server\\share\\shadow",
+            launchArgs: "--quiet",
+          },
+        },
+        codex_bare: {
+          driver: ProviderDriverKind.make("codex"),
+          enabled: true,
+          config: { binaryPath: "codex" },
+        },
+      },
+      "linux",
+    );
+
+    // Existing local overrides must win over pulled Windows paths.
+    expect(
+      (winToLinux["codex_local" as ProviderInstanceId].config as Record<string, unknown>)
+        .binaryPath,
+    ).toBe("/usr/local/bin/codex");
+    expect(
+      (winToLinux["codex_local" as ProviderInstanceId].config as Record<string, unknown>).homePath,
+    ).toBe("/home/ai/.codex");
+    expect(
+      (winToLinux["codex_local" as ProviderInstanceId].config as Record<string, unknown>)
+        .launchArgs,
+    ).toBe("--full-auto");
+
+    // Foreign Windows paths on a new Linux instance must be stripped, keeping non-path config.
+    const newCfg = winToLinux["codex_new" as ProviderInstanceId].config as Record<string, unknown>;
+    expect(newCfg.binaryPath).toBeUndefined();
+    expect(newCfg.homePath).toBeUndefined();
+    expect(newCfg.shadowHomePath).toBeUndefined();
+    expect(newCfg.launchArgs).toBe("--quiet");
+
+    // Portable command names (no path separator) stay intact.
+    expect(
+      (winToLinux["codex_bare" as ProviderInstanceId].config as Record<string, unknown>).binaryPath,
+    ).toBe("codex");
+
+    // Pulling POSIX paths onto Windows must strip POSIX absolute/home paths.
+    const linuxToWin = ProviderPoolService.mergePulledProviderInstances(
+      {},
+      {
+        claude_1: {
+          driver: ProviderDriverKind.make("claudeAgent"),
+          enabled: true,
+          config: { binaryPath: "/opt/bin/claude", homePath: "~/.claude-alt" },
+        },
+      },
+      "win32",
+    );
+    const winCfg = linuxToWin["claude_1" as ProviderInstanceId].config as Record<string, unknown>;
+    expect(winCfg.binaryPath).toBeUndefined();
+    expect(winCfg.homePath).toBeUndefined();
+  });
 });

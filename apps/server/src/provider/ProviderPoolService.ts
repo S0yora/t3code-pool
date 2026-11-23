@@ -24,6 +24,7 @@ import {
   selectPoolMember,
   setThreadLease,
 } from "@t3tools/shared/accountPool";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
@@ -56,6 +57,67 @@ class PoolHubHttpError extends Schema.TaggedError<PoolHubHttpError>()("PoolHubHt
 
 const DEFAULT_COOLDOWN_MS = 5 * 60_000;
 const HUB_BUNDLE_FILENAME = "pool-hub-bundle.json";
+
+const LOCAL_ONLY_PATH_KEYS = [
+  "binaryPath",
+  "homePath",
+  "shadowHomePath",
+  "configPath",
+  "executablePath",
+] as const;
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Detects filesystem paths belonging to a different OS family so Pull never breaks local CLI resolution. */
+function isForeignOsPath(value: string, targetPlatform: NodeJS.Platform): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (targetPlatform === "win32") {
+    return trimmed.startsWith("/") || trimmed.startsWith("~/");
+  }
+  return /^[a-zA-Z]:[\\/]/.test(trimmed) || trimmed.startsWith("\\\\") || trimmed.includes("\\");
+}
+
+/**
+ * Merges synced provider instances onto a target machine while protecting local OS paths:
+ * - Preserves existing local binaryPath/homePath/etc. overrides for instances already configured here.
+ * - Drops foreign-OS paths (e.g. C:\... pulled onto Linux/macOS, or /usr/... pulled onto Windows)
+ *   so the target machine falls back to its own PATH / default home directory.
+ */
+export function mergePulledProviderInstances(
+  localInstances: Readonly<Record<string, ProviderInstanceConfig>>,
+  pulledInstances: Readonly<Record<string, ProviderInstanceConfig>>,
+  targetPlatform: NodeJS.Platform,
+): Record<ProviderInstanceId, ProviderInstanceConfig> {
+  const merged: Record<string, ProviderInstanceConfig> = { ...localInstances };
+  for (const [instanceId, pulled] of Object.entries(pulledInstances)) {
+    const local = localInstances[instanceId];
+    if (!isPlainRecord(pulled.config)) {
+      merged[instanceId] = pulled;
+      continue;
+    }
+    const localConfig = isPlainRecord(local?.config) ? local.config : undefined;
+    const sanitizedConfig: Record<string, unknown> = { ...pulled.config };
+    for (const key of LOCAL_ONLY_PATH_KEYS) {
+      const localValue = localConfig?.[key];
+      if (typeof localValue === "string" && localValue.trim().length > 0) {
+        sanitizedConfig[key] = localValue;
+        continue;
+      }
+      const pulledValue = sanitizedConfig[key];
+      if (typeof pulledValue === "string" && isForeignOsPath(pulledValue, targetPlatform)) {
+        delete sanitizedConfig[key];
+      }
+    }
+    merged[instanceId] = {
+      ...pulled,
+      config: sanitizedConfig,
+    };
+  }
+  return merged as Record<ProviderInstanceId, ProviderInstanceConfig>;
+}
 const HUB_DEVICE_REPORT_TTL_MS = 5 * 60_000;
 
 const SyncedCredentialRecordSchema = Schema.Struct({
@@ -506,10 +568,12 @@ const make = Effect.gen(function* () {
     }
 
     const payload = decodedPayload.value;
-    const mergedInstances = {
-      ...settings.providerInstances,
-      ...payload.providerInstances,
-    } as Record<ProviderInstanceId, ProviderInstanceConfig>;
+    const platform = yield* HostProcess.Platform;
+    const mergedInstances = mergePulledProviderInstances(
+      settings.providerInstances,
+      payload.providerInstances,
+      platform,
+    );
 
     yield* settingsService
       .updateSettings({

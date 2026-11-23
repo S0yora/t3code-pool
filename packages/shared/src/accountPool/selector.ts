@@ -39,7 +39,7 @@ export function findPoolForInstance(
   return null;
 }
 
-export function computeMemberQuotaAssessment(input: {
+function computeMemberQuotaAssessment(input: {
   readonly provider: ServerProvider | undefined;
   readonly instanceId: ProviderInstanceId;
   readonly cooldownState: PoolCooldownState;
