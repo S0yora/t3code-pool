@@ -5,6 +5,7 @@ import {
   CodexSettings,
   EasDeviceHostConfig,
   type ProviderInstanceConfig,
+  ProviderPoolSyncSettings,
   type ServerSettings,
   type SettingsSecretValue,
   SimlockDeviceHostConfig,
@@ -47,6 +48,7 @@ const providerSecretFields = new Map([
   ),
 ]);
 const usageLimitSecretFields = secretSettingsFields(UsageLimitSourceConfig);
+const providerPoolSyncSecretFields = secretSettingsFields(ProviderPoolSyncSettings);
 const textGeneratorSecretFields = secretSettingsFields(TextGeneratorConfig);
 const voiceSecretFields = secretSettingsFields(CloudSpeechCredentials);
 const easDeviceHostSecretFields = secretSettingsFields(EasDeviceHostConfig);
@@ -254,6 +256,11 @@ function mapSecretFieldGroups(
       voiceSecretFields,
       (provider) => `voice-cloud-${provider}`,
     ) as ServerSettings["cloudSpeechCredentials"],
+    providerPoolSync: mapFields(
+      settings.providerPoolSync,
+      providerPoolSyncSecretFields,
+      (field) => `provider-pool-sync-${encode(field)}`,
+    ) as ServerSettings["providerPoolSync"],
     providerInstances,
     sourceControlHosts,
     usageLimitSources,

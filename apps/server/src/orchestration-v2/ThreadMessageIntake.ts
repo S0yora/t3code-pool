@@ -7,7 +7,9 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as ProviderPoolService from "../provider/ProviderPoolService.ts";
 import { resolveAttachmentPath } from "../attachmentStore.ts";
 import { rpcAuthorizationError } from "../auth/RpcAuthorization.ts";
 import * as ServerConfig from "../config.ts";
@@ -131,12 +133,37 @@ export const dispatchCommand = Effect.fn("ThreadMessageIntake.dispatchCommand")(
   incoming: OrchestrationV2Command,
   sender: { readonly managesProviders: boolean },
 ) {
-  const command =
+  const rawCommand =
     incoming.type === "message.dispatch"
       ? yield* withGuestAttachments(incoming)
       : incoming.type === "queued-run.edit" && !sender.managesProviders
         ? yield* withQueuedAttachmentsOnSignOutText(incoming)
         : incoming;
+  const poolServiceOption = yield* Effect.serviceOption(ProviderPoolService.ProviderPoolService);
+  const command = yield* Effect.gen(function* () {
+    if (
+      rawCommand.type !== "message.dispatch" ||
+      rawCommand.usageLimitContinuationOfRunId !== undefined ||
+      Option.isNone(poolServiceOption)
+    ) {
+      return rawCommand;
+    }
+    const targetSelection =
+      rawCommand.modelSelection ??
+      (yield* (yield* ThreadManagement.ThreadManagementService)
+        .getThreadShell(rawCommand.threadId)
+        .pipe(
+          Effect.map((shell) => shell?.modelSelection),
+          Effect.orElseSucceed(() => undefined),
+        ));
+    if (targetSelection === undefined) return rawCommand;
+    const resolved = yield* poolServiceOption.value.resolveModelSelection({
+      modelSelection: targetSelection,
+      threadId: rawCommand.threadId,
+    });
+    if (!resolved.switched && rawCommand.modelSelection === undefined) return rawCommand;
+    return { ...rawCommand, modelSelection: resolved.modelSelection };
+  });
   const threads = yield* ThreadManagement.ThreadManagementService;
   if (command.type === "runtime-request.respond" && command.attachmentsByQuestionId) {
     const config = yield* ServerConfig.ServerConfig;
@@ -276,9 +303,20 @@ export const sendToThread = Effect.fn("ThreadMessageIntake.sendToThread")(functi
 });
 
 export const launchThread = Effect.fn("ThreadMessageIntake.launchThread")(function* (
-  input: ThreadLaunch.ThreadLaunchInput,
+  rawInput: ThreadLaunch.ThreadLaunchInput,
 ) {
   const launches = yield* ThreadLaunch.ThreadLaunchService;
+  const poolServiceOption = yield* Effect.serviceOption(ProviderPoolService.ProviderPoolService);
+  const input = Option.isSome(poolServiceOption)
+    ? {
+        ...rawInput,
+        modelSelection: (yield* poolServiceOption.value.resolveModelSelection({
+          modelSelection: rawInput.modelSelection,
+          threadId: rawInput.threadId,
+          respectSticky: false,
+        })).modelSelection,
+      }
+    : rawInput;
   yield* AttachmentClaims.validateAttachmentLimits(input.initialMessage?.attachments ?? []);
   if (!input.initialMessage?.attachments.some(AttachmentClaims.attachmentIsPendingUpload)) {
     return yield* launches.launch(input);

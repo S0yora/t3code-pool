@@ -1989,6 +1989,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         "cloudSpeechCredentials.openrouter",
         "easDeviceHosts.[].accessToken",
         "simlockDeviceHosts.[].agentToken",
+        "providerPoolSync.syncToken",
+        "providerPoolSync.syncPassphrase",
         "usageLimitSources.*.managementKey",
         "textGenerators.*.apiKey",
       ]);
