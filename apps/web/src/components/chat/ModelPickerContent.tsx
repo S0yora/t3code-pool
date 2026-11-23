@@ -119,6 +119,9 @@ function shouldIncludeModelPickerOption(input: {
   if (input.entry.driverKind === "antigravity" && input.option.slug === ANTIGRAVITY_DEFAULT_MODEL) {
     return false;
   }
+  if (input.entry.hiddenInPool) {
+    return false;
+  }
   if (isProviderInstancePickerReady(input.entry)) return true;
   return (
     input.entry.enabled &&
@@ -435,6 +438,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       activeEntry,
       modelOptionsByInstance.get(props.activeInstanceId) ?? [],
     );
+  const effectiveActiveInstanceId = activeEntry?.poolRepresentativeId ?? props.activeInstanceId;
   const [selectedInstanceId, setSelectedInstanceId] = useState<ProviderInstanceId | "favorites">(
     () => {
       if (
@@ -442,7 +446,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         activeInstanceHasSelectableUnavailableModel ||
         activeInstanceNeedsSetup
       ) {
-        return props.activeInstanceId;
+        return effectiveActiveInstanceId;
       }
       const hasPickableFavorite = favorites.some((favorite) => {
         const entry = instanceEntries.find((entry) => entry.instanceId === favorite.provider);
@@ -460,7 +464,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           )
         );
       });
-      return hasPickableFavorite ? "favorites" : props.activeInstanceId;
+      return hasPickableFavorite ? "favorites" : effectiveActiveInstanceId;
     },
   );
   const { scanning: workspaceModelsScanning } = useProviderWorkspaceSnapshotRefresh({

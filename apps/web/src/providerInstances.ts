@@ -7,6 +7,7 @@ import {
   type ProjectId,
   type ProviderDriverKind,
   ProviderInstanceId,
+  type ProviderPoolId,
   type ServerProvider,
   type ServerProviderModel,
   type ServerSettings,
@@ -41,6 +42,12 @@ export interface ProviderInstanceEntry {
   readonly isAvailable: boolean;
   readonly snapshot: ServerProvider;
   readonly models: ReadonlyArray<ServerProviderModel>;
+  readonly poolId?: ProviderPoolId | undefined;
+  readonly poolDisplayName?: string | undefined;
+  readonly poolRepresentativeId?: ProviderInstanceId | undefined;
+  readonly poolMemberCount?: number | undefined;
+  readonly poolReadyCount?: number | undefined;
+  readonly hiddenInPool?: boolean | undefined;
 }
 
 /** Status dots share one corner per user, so a badge on one row can't move only that row's dot. */
@@ -82,7 +89,7 @@ export function isProviderInstancePickerReady(entry: ProviderInstanceEntry): boo
 }
 
 export function isProviderInstancePickerVisible(entry: ProviderInstanceEntry): boolean {
-  return entry.enabled;
+  return entry.enabled && !entry.hiddenInPool;
 }
 
 export function deriveProviderInstanceEntries(
@@ -143,19 +150,93 @@ export function brandProviderInstanceEntries(
   return entries.map((entry) => applyProviderInstanceBranding(entry, settings));
 }
 
+function applyProviderPoolCollapse(
+  entries: ReadonlyArray<ProviderInstanceEntry>,
+  providerPools: ServerSettings["providerPools"] | undefined,
+): ReadonlyArray<ProviderInstanceEntry> {
+  if (!providerPools) return entries;
+  const poolEntries = Object.entries(providerPools) as Array<
+    [ProviderPoolId, ServerSettings["providerPools"][ProviderPoolId]]
+  >;
+  if (poolEntries.length === 0) return entries;
+
+  const entryById = new Map(entries.map((entry) => [entry.instanceId, entry] as const));
+  const metaByInstanceId = new Map<
+    ProviderInstanceId,
+    {
+      readonly poolId: ProviderPoolId;
+      readonly poolDisplayName: string;
+      readonly accentColor: string | undefined;
+      readonly representativeId: ProviderInstanceId;
+      readonly memberCount: number;
+      readonly readyCount: number;
+      readonly hidden: boolean;
+    }
+  >();
+
+  for (const [poolId, pool] of poolEntries) {
+    if (!pool.enabled || pool.memberInstanceIds.length === 0) continue;
+    const memberEntries = pool.memberInstanceIds
+      .map((id) => entryById.get(id))
+      .filter((entry): entry is ProviderInstanceEntry => entry !== undefined);
+    if (memberEntries.length === 0) continue;
+
+    const representative =
+      memberEntries.find(isProviderInstancePickerReady) ??
+      memberEntries.find((entry) => entry.enabled) ??
+      memberEntries[0]!;
+    const readyCount = memberEntries.filter(isProviderInstancePickerReady).length;
+    const poolAccent = normalizeProviderAccentColor(pool.accentColor);
+
+    for (const member of memberEntries) {
+      if (metaByInstanceId.has(member.instanceId)) continue;
+      metaByInstanceId.set(member.instanceId, {
+        poolId,
+        poolDisplayName: pool.displayName,
+        accentColor: poolAccent,
+        representativeId: representative.instanceId,
+        memberCount: memberEntries.length,
+        readyCount,
+        hidden: member.instanceId !== representative.instanceId,
+      });
+    }
+  }
+
+  if (metaByInstanceId.size === 0) return entries;
+
+  return entries.map((entry) => {
+    const meta = metaByInstanceId.get(entry.instanceId);
+    if (!meta) return entry;
+    return {
+      ...entry,
+      displayName: meta.hidden ? entry.displayName : meta.poolDisplayName,
+      accentColor: meta.hidden ? entry.accentColor : (meta.accentColor ?? entry.accentColor),
+      poolId: meta.poolId,
+      poolDisplayName: meta.poolDisplayName,
+      poolRepresentativeId: meta.representativeId,
+      poolMemberCount: meta.memberCount,
+      poolReadyCount: meta.readyCount,
+      hiddenInPool: meta.hidden,
+    };
+  });
+}
+
 /** projectId applies project overrides; explicit null uses machine settings. */
 export function applyProviderInstanceSettings(
   entries: ReadonlyArray<ProviderInstanceEntry>,
-  settings: Pick<ServerSettings, "providerInstances" | "projectSettingsOverrides">,
+  settings: Pick<ServerSettings, "providerInstances" | "projectSettingsOverrides"> & {
+    readonly providerPools?: ServerSettings["providerPools"] | undefined;
+  },
   projectId: ProjectId | null,
 ): ReadonlyArray<ProviderInstanceEntry> {
-  return entries.map((entry) => {
+  const branded = entries.map((entry) => {
     const enabled = resolveProjectProviderInstanceEnabled(settings, projectId, entry.instanceId);
     return applyProviderInstanceBranding(
       enabled === entry.enabled ? entry : { ...entry, enabled },
       settings,
     );
   });
+  return applyProviderPoolCollapse(branded, settings.providerPools);
 }
 
 function applyProviderInstanceBranding(
@@ -189,7 +270,9 @@ function applyProviderInstanceBranding(
 /** Picker order: each driver's default instance first, then its custom instances. */
 export function providerInstanceEntriesFor(
   providers: ReadonlyArray<ServerProvider>,
-  settings: Pick<ServerSettings, "providerInstances" | "projectSettingsOverrides">,
+  settings: Pick<ServerSettings, "providerInstances" | "projectSettingsOverrides"> & {
+    readonly providerPools?: ServerSettings["providerPools"] | undefined;
+  },
   projectId: ProjectId | null,
 ): ReadonlyArray<ProviderInstanceEntry> {
   return pipe(

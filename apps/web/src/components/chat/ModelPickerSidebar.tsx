@@ -153,11 +153,15 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             const isHovered = hoveredInstanceId === entry.instanceId;
             const showInstanceBadge = shouldShowInstanceBadge(entry, props.instanceEntries);
 
+            const readyTooltip =
+              entry.poolMemberCount && entry.poolMemberCount > 1
+                ? `${entry.displayName} (${entry.poolReadyCount ?? 0}/${entry.poolMemberCount} ready)`
+                : entry.displayName;
             const tooltip = isUnavailable
               ? describeUnavailableInstance(entry, m)
               : isContextDisabled
                 ? (props.getDisabledInstanceTooltip?.(entry) ?? entry.displayName)
-                : entry.displayName;
+                : readyTooltip;
 
             const button = (
               <Toolbar.Button

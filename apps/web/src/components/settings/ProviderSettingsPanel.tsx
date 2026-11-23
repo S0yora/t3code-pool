@@ -102,6 +102,7 @@ import { ExpandableText } from "./ExpandableText";
 import { IntervalSecondsField } from "./IntervalSecondsField";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { useSecretSources } from "./SecretSourceInput";
+import { ProviderPoolsSettings } from "./ProviderPoolsSettings";
 import { TextGeneratorsSettings } from "./TextGeneratorsSettings";
 import { UsageProviderSettings } from "./UsageProviderSettings";
 import { ProviderSetupSection, readAntigravityAuthMethod } from "./ProviderSetupSection";
@@ -1144,6 +1145,15 @@ export function EnvironmentProviderSettings({
           </div>
         </SettingsGroup>
       </SettingsSection>
+
+      <ProviderPoolsSettings
+        key={`pools:${environmentId}`}
+        environmentId={environmentId}
+        environmentLabel={environmentLabel}
+        settings={settings}
+        providers={serverProviders}
+        readOnly={readOnly}
+      />
 
       <UsageProviderSettings
         key={environmentId}
