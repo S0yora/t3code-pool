@@ -892,24 +892,24 @@ jobs:
             exit 0
           fi
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > app/release.keystore
-          node -e '
-            const fs = require("fs");
-            const p = "app/build.gradle";
-            let g = fs.readFileSync(p, "utf8");
-            const releaseSigning = [
-              "        release {",
-              '            storeFile file("release.keystore")',
-              '            storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")',
-              '            keyAlias System.getenv("ANDROID_KEY_ALIAS")',
-              '            keyPassword System.getenv("ANDROID_KEY_PASSWORD")',
-              "        }",
-            ].join("\n");
-            if (!g.includes("storeFile file(\"release.keystore\")")) {
-              g = g.replace(/(signingConfigs\s*\{[\s\S]*?debug\s*\{[\s\S]*?\})/, "$1\n" + releaseSigning);
-              g = g.replace(/(release\s*\{[\s\S]*?)signingConfig signingConfigs\.debug/, "$1signingConfig signingConfigs.release");
-            }
-            fs.writeFileSync(p, g, "utf8");
-          '
+          node <<'NODE'
+          const fs = require("fs");
+          const p = "app/build.gradle";
+          let g = fs.readFileSync(p, "utf8");
+          const releaseSigning = [
+            "        release {",
+            '            storeFile file("release.keystore")',
+            '            storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")',
+            '            keyAlias System.getenv("ANDROID_KEY_ALIAS")',
+            '            keyPassword System.getenv("ANDROID_KEY_PASSWORD")',
+            "        }",
+          ].join("\n");
+          if (!g.includes('storeFile file("release.keystore")')) {
+            g = g.replace(/(signingConfigs\s*\{[\s\S]*?debug\s*\{[\s\S]*?\})/, "$1\n" + releaseSigning);
+            g = g.replace(/(release\s*\{[\s\S]*?)signingConfig signingConfigs\.debug/, "$1signingConfig signingConfigs.release");
+          }
+          fs.writeFileSync(p, g, "utf8");
+          NODE
 
       - name: Build release APK
         working-directory: apps/mobile/android

@@ -189,29 +189,27 @@ describe("ProviderPoolService", () => {
     );
 
     // Existing local overrides must win over pulled Windows paths.
-    expect(
-      (winToLinux["codex_local" as ProviderInstanceId].config as Record<string, unknown>)
-        .binaryPath,
-    ).toBe("/usr/local/bin/codex");
-    expect(
-      (winToLinux["codex_local" as ProviderInstanceId].config as Record<string, unknown>).homePath,
-    ).toBe("/home/ai/.codex");
-    expect(
-      (winToLinux["codex_local" as ProviderInstanceId].config as Record<string, unknown>)
-        .launchArgs,
-    ).toBe("--full-auto");
+    const localCfg = winToLinux["codex_local" as ProviderInstanceId]?.config as
+      | Record<string, unknown>
+      | undefined;
+    expect(localCfg?.binaryPath).toBe("/usr/local/bin/codex");
+    expect(localCfg?.homePath).toBe("/home/ai/.codex");
+    expect(localCfg?.launchArgs).toBe("--full-auto");
 
     // Foreign Windows paths on a new Linux instance must be stripped, keeping non-path config.
-    const newCfg = winToLinux["codex_new" as ProviderInstanceId].config as Record<string, unknown>;
-    expect(newCfg.binaryPath).toBeUndefined();
-    expect(newCfg.homePath).toBeUndefined();
-    expect(newCfg.shadowHomePath).toBeUndefined();
-    expect(newCfg.launchArgs).toBe("--quiet");
+    const newCfg = winToLinux["codex_new" as ProviderInstanceId]?.config as
+      | Record<string, unknown>
+      | undefined;
+    expect(newCfg?.binaryPath).toBeUndefined();
+    expect(newCfg?.homePath).toBeUndefined();
+    expect(newCfg?.shadowHomePath).toBeUndefined();
+    expect(newCfg?.launchArgs).toBe("--quiet");
 
     // Portable command names (no path separator) stay intact.
-    expect(
-      (winToLinux["codex_bare" as ProviderInstanceId].config as Record<string, unknown>).binaryPath,
-    ).toBe("codex");
+    const bareCfg = winToLinux["codex_bare" as ProviderInstanceId]?.config as
+      | Record<string, unknown>
+      | undefined;
+    expect(bareCfg?.binaryPath).toBe("codex");
 
     // Pulling POSIX paths onto Windows must strip POSIX absolute/home paths.
     const linuxToWin = ProviderPoolService.mergePulledProviderInstances(
@@ -225,8 +223,10 @@ describe("ProviderPoolService", () => {
       },
       "win32",
     );
-    const winCfg = linuxToWin["claude_1" as ProviderInstanceId].config as Record<string, unknown>;
-    expect(winCfg.binaryPath).toBeUndefined();
-    expect(winCfg.homePath).toBeUndefined();
+    const winCfg = linuxToWin["claude_1" as ProviderInstanceId]?.config as
+      | Record<string, unknown>
+      | undefined;
+    expect(winCfg?.binaryPath).toBeUndefined();
+    expect(winCfg?.homePath).toBeUndefined();
   });
 });
