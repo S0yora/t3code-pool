@@ -670,6 +670,10 @@
     "./assistantInsights": {
       "types": "./src/assistantInsights.ts",
       "import": "./src/assistantInsights.ts"
+    },
+    "./accountPool": {
+      "types": "./src/accountPool/index.ts",
+      "import": "./src/accountPool/index.ts"
     }
   },
   "scripts": {
