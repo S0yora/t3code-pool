@@ -223,7 +223,10 @@ export function ProviderPoolsSettings({
   const refreshStatus = async () => {
     if (!prepared) return;
     setIsRefreshingStatus(true);
-    const res = await fetchEnvironmentPoolEndpoint<PoolStatusPayload>(prepared, "/api/pool/status");
+    const res = await fetchEnvironmentPoolEndpoint<PoolStatusPayload>(
+      prepared,
+      "/api/pool-hub/status",
+    );
     setIsRefreshingStatus(false);
     if (res.ok && res.data) {
       setStatus(res.data);
@@ -234,7 +237,7 @@ export function ProviderPoolsSettings({
   useEffect(() => {
     let cancelled = false;
     if (!prepared) return;
-    void fetchEnvironmentPoolEndpoint<PoolStatusPayload>(prepared, "/api/pool/status").then(
+    void fetchEnvironmentPoolEndpoint<PoolStatusPayload>(prepared, "/api/pool-hub/status").then(
       (res) => {
         if (!cancelled && res.ok && res.data) {
           setStatus(res.data);
@@ -303,15 +306,14 @@ export function ProviderPoolsSettings({
   const runSyncAction = async (action: "push" | "pull" | "sync") => {
     if (!prepared || busyAction !== null) return;
     setBusyAction(action);
-    const endpoint =
-      action === "push"
-        ? "/api/pool/sync/push"
-        : action === "pull"
-          ? "/api/pool/sync/pull"
-          : "/api/pool/sync/now";
-    const res = await fetchEnvironmentPoolEndpoint<PoolSyncActionResponse>(prepared, endpoint, {
-      method: "POST",
-    });
+    const res = await fetchEnvironmentPoolEndpoint<PoolSyncActionResponse>(
+      prepared,
+      "/api/pool-hub/sync",
+      {
+        method: "POST",
+        body: JSON.stringify({ action }),
+      },
+    );
     setBusyAction(null);
     const detail = res.ok
       ? (res.data?.detail ?? gt("Done."))
