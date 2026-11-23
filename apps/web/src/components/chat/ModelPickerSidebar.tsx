@@ -155,7 +155,13 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
 
             const readyTooltip =
               entry.poolMemberCount && entry.poolMemberCount > 1
-                ? `${entry.displayName} (${entry.poolReadyCount ?? 0}/${entry.poolMemberCount} ready)`
+                ? m(
+                    msg("{name} ({ready}/{total} ready)", {
+                      name: entry.displayName,
+                      ready: entry.poolReadyCount ?? 0,
+                      total: entry.poolMemberCount,
+                    }),
+                  )
                 : entry.displayName;
             const tooltip = isUnavailable
               ? describeUnavailableInstance(entry, m)

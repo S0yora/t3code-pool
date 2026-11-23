@@ -83,6 +83,8 @@ import {
   type ProviderSettingsUpdateCandidate,
 } from "../ProviderUpdateLaunchNotification.logic";
 import { ProviderUpdatesAction } from "../ProviderUpdatesAction";
+import { clearAutoRefreshAttempt } from "../ProviderAutoRefreshEffect";
+import { Switch } from "../ui/switch";
 import { Button } from "../ui/button";
 import {
   Empty,
@@ -665,6 +667,25 @@ export function EnvironmentProviderSettings({
   );
   const defaultProviderHealthRefreshIntervalSeconds = durationToSeconds(providerHealthPreset);
 
+  const refreshSingleProvider = useStableCallback((instanceId: ProviderInstanceId) => {
+    if (!readEnvironmentScope(environmentId, AuthOrchestrationReadScope)) return;
+    clearAutoRefreshAttempt(environmentId, instanceId);
+    void (async () => {
+      const result = await refreshServerProviders({
+        environmentId,
+        input: { instanceId, refreshModels: true, reloadSecrets: true },
+      });
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        console.warn("Failed to refresh provider instance", {
+          operation: "refresh-provider-instance",
+          environmentId,
+          instanceId,
+          ...safeErrorLogAttributes(squashAtomCommandFailure(result)),
+        });
+      }
+    })();
+  });
+
   const refreshProviders = () => {
     if (refreshingRef.current || !readEnvironmentScope(environmentId, AuthOrchestrationReadScope))
       return;
@@ -850,27 +871,38 @@ export function EnvironmentProviderSettings({
   };
 
   const updateInstance = useStableCallback(
-    (
+    async (
       instanceId: ProviderInstanceId,
       previous: ProviderInstanceConfig,
       next: ProviderInstanceConfig,
     ) => {
-      const isDisabling = next.enabled === false && resolveProviderInstanceEnabled(previous);
+      const wasEnabled = resolveProviderInstanceEnabled(previous);
+      const isEnabling = resolveProviderInstanceEnabled(next) && !wasEnabled;
+      const isDisabling = next.enabled === false && wasEnabled;
       const shouldClearTextGen =
         isDisabling &&
         resolveAppModelSelectionState(settings, serverProviders).instanceId === instanceId &&
         readEnvironmentScope(environmentId, AuthSettingsWriteScope);
-      return persistInstance(
+      const ok = await persistInstance(
         instanceId,
         next,
         shouldClearTextGen ? DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection : undefined,
       );
+      if (ok && isEnabling && settings.autoRefreshProviderStatus) {
+        refreshSingleProvider(instanceId);
+      }
+      return ok;
     },
   );
 
   const enableInstance = useStableCallback(
-    (instanceId: ProviderInstanceId, next: ProviderInstanceConfig) =>
-      persistInstance(instanceId, next),
+    async (instanceId: ProviderInstanceId, next: ProviderInstanceConfig) => {
+      const ok = await persistInstance(instanceId, next);
+      if (ok && settings.autoRefreshProviderStatus) {
+        refreshSingleProvider(instanceId);
+      }
+      return ok;
+    },
   );
 
   const deleteInstance = useStableCallback(
@@ -1175,6 +1207,20 @@ export function EnvironmentProviderSettings({
       ) : null}
 
       <SettingsSection title={gt("Advanced")}>
+        <SettingsRow
+          title={gt("Auto-refresh provider status")}
+          description={gt(
+            "Check status and models automatically when enabling a provider or starting with unchecked accounts.",
+          )}
+          control={
+            <Switch
+              checked={settings.autoRefreshProviderStatus}
+              disabled={!canWriteSettings}
+              aria-label={gt("Auto-refresh provider status")}
+              onCheckedChange={(checked) => updateSettings({ autoRefreshProviderStatus: checked })}
+            />
+          }
+        />
         <SettingsRow
           id={searchableSetting("provider-health-check-interval").id}
           title={

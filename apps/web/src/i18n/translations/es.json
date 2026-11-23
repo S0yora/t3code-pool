@@ -3208,7 +3208,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "en el ordenador que abrió esta página"]
+      "c": [
+        " ",
+        "en el ordenador que abrió esta página"
+      ]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3220,7 +3223,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "· quien lo ejecute obtiene este acceso"]
+      "c": [
+        " ",
+        "· quien lo ejecute obtiene este acceso"
+      ]
     }
   ],
   "c54cc9c75db9dc58": "Aprueba solo un inicio de sesión que acabes de iniciar.",
@@ -12781,5 +12787,73 @@
   "99d51127f573296b": "Otra cuenta",
   "8ec2c57414669b79": "Conecta un segundo espacio de trabajo o usuario de {tracker}.",
   "99963c0142e17f00": "Para la nueva cuenta de {tracker}.",
-  "6d8e4ebc889bace9": "Añadir cuenta"
+  "6d8e4ebc889bace9": "Añadir cuenta",
+  "3988eebd2096efc4": "Actualizar estado de proveedores automáticamente",
+  "3042c168554b3a15": "Comprobar estado y modelos automáticamente al activar un proveedor o al iniciar con cuentas sin verificar.",
+  "5f93694a8f2886f3": "{name} ({ready}/{total} listos)",
+  "787b1f346bd4aa50": "Pools de cuentas",
+  "270a421fc9d6f15e": "Actualizar estado del pool",
+  "aae458feb4b7beea": "Añadir pool",
+  "8da51057b194ec5e": "{count} cuentas de {driver} sin pool",
+  "0b0e2beff4b60413": "Agrúpalas en una sola entrada con cambio automático si hay límites.",
+  "5506e029e195881d": "Pool creado",
+  "c35c83065fc9239c": "{name}: {count} cuentas.",
+  "713da3899c03b306": "Crear pool",
+  "a071ff069b6f3ee8": "Aún no hay pools.",
+  "fb8265927a585976": "Añade dos o más cuentas arriba y agrúpalas en un pool.",
+  "c7617c06ddccc250": "{ready}/{total} listos",
+  "ad2959492887bf33": "{count} activos",
+  "129fbe5b232431ab": "Menos usado",
+  "97823d9ea05f1d3e": "Reinicio más próximo",
+  "147cae6bb964a2a6": "Por turnos",
+  "8cfaa098250ffd84": "Prioridad",
+  "49bdd8e3be027650": "Failover",
+  "3c934ffebdad00be": "Hilos fijos",
+  "ffb4e20efe808e27": "Espera: {details}",
+  "ff969f7282512fab": "Sincronización de pools",
+  "7ad77414eab61696": "Sincronizar entre dispositivos",
+  "545df693b1880fd3": "Comparte tiempos de espera y paquetes de cuentas cifrados entre {environment} y tus otros dispositivos.",
+  "7a614de3775b0581": "Rol",
+  "8f3eafc587126324": "Aloja la API de sincronización y guarda la bóveda cifrada.",
+  "4660b6349187aa9d": "Sincroniza tiempos de espera y cuentas con tu Hub.",
+  "aab48824fdd6af28": "Hub (servidor)",
+  "660e0823e59a2fc8": "Cliente",
+  "1a50f6a629c6a895": "URL del Hub",
+  "412bb40a134c6f25": "Dirección de tu servidor Hub.",
+  "8952a55d58d537a3": "Token de sincronización",
+  "d0c2884f0b6ce633": "Token compartido para acceder a la API del Hub.",
+  "9dcd7d955d0da507": "Borrar token de sincronización",
+  "67cbdc093cf9b337": "Clave de la bóveda",
+  "5cbd7e072955fc99": "Cifra los datos de cuentas en local (AES-256-GCM). Nunca se envía al servidor.",
+  "00d3404d0eafd949": "Borrar clave de la bóveda",
+  "547dd3dbcc37c4d8": "Incluir tokens de cuentas",
+  "b38328ba22986e84": "Sincronizar los tokens guardados junto con la configuración de pools.",
+  "8604fba3d5352927": "Acciones de bóveda",
+  "6e82826b36fd4c39": "Actualizada el {time} · {cooldowns} en espera.",
+  "6ef81f0fa56bc132": "Guarda los pools y cuentas de este Hub en la bóveda cifrada.",
+  "f8929a656cee716e": "Sube desde tu dispositivo principal y descarga en otro.",
+  "9f6c118033dbc9c7": "Sincronizar",
+  "5204c2278bf91b22": "Subir bóveda",
+  "670e93392362d3eb": "Descargar bóveda",
+  "408262187d626e4d": "Listo.",
+  "2132f4541d185d54": "Error en la solicitud (HTTP {status}).",
+  "93c129213064cc7d": "Eliminar pool {name}",
+  "1db10e0c4c753e7f": "¿Eliminar {name}?",
+  "0fd49f2453acfe07": "Las cuentas no se borran y volverán a aparecer por separado.",
+  "1665468ebe11df1d": "Eliminar pool",
+  "f16987812aff0d1f": "Editar pool",
+  "1ebcc10ce285a8ba": "Nuevo pool",
+  "f81e97a1799e8564": "Las cuentas elegidas aparecerán como una sola entrada al elegir modelo.",
+  "40d503c55341ad4b": "Nombre del pool",
+  "71a38821c247a370": "p. ej., Antigravity Pool",
+  "0d64a0a72583792e": "Reparto",
+  "c8eca46a29a454d5": "Cuentas ({count})",
+  "ce4ddc84d2146f5a": "Quitar todo",
+  "b3f12be78c2bcad9": "Aún no hay cuentas para este proveedor.",
+  "a553be36e93303cd": "Listo",
+  "6fffd817251576ba": "Limitado",
+  "d66b287f60ccdeb5": "Cambio automático al llegar al límite",
+  "a07b362abafc5379": "Cambia a otra cuenta disponible y continúa la tarea.",
+  "743f77ebc2b5ddc4": "Mantener el hilo en la misma cuenta",
+  "eddf07c62c000c65": "Usa la misma cuenta en cada hilo hasta que se agote su cuota."
 }

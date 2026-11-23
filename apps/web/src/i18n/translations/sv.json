@@ -3208,7 +3208,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "på datorn som öppnade den här sidan"]
+      "c": [
+        " ",
+        "på datorn som öppnade den här sidan"
+      ]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3220,7 +3223,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "· den som kör den får den här åtkomsten"]
+      "c": [
+        " ",
+        "· den som kör den får den här åtkomsten"
+      ]
     }
   ],
   "c54cc9c75db9dc58": "Godkänn bara en inloggning som du själv precis har startat.",
@@ -12793,5 +12799,73 @@
   "99d51127f573296b": "Ett konto till",
   "8ec2c57414669b79": "Anslut en andra {tracker}-arbetsyta eller användare.",
   "99963c0142e17f00": "För det nya {tracker}-kontot.",
-  "6d8e4ebc889bace9": "Lägg till konto"
+  "6d8e4ebc889bace9": "Lägg till konto",
+  "3988eebd2096efc4": "Uppdatera leverantörsstatus automatiskt",
+  "3042c168554b3a15": "Kontrollera status och modeller automatiskt när en leverantör aktiveras eller vid start med okontrollerade konton.",
+  "5f93694a8f2886f3": "{name} ({ready}/{total} redo)",
+  "787b1f346bd4aa50": "Kontopooler",
+  "270a421fc9d6f15e": "Uppdatera poolstatus",
+  "aae458feb4b7beea": "Lägg till pool",
+  "8da51057b194ec5e": "{count} {driver}-konton utan pool",
+  "0b0e2beff4b60413": "Samla dem i en post med automatisk växling vid gränser.",
+  "5506e029e195881d": "Pool skapad",
+  "c35c83065fc9239c": "{name}: {count} konton.",
+  "713da3899c03b306": "Skapa pool",
+  "a071ff069b6f3ee8": "Inga pooler än.",
+  "fb8265927a585976": "Lägg till två eller fler konton ovan och samla dem i en pool.",
+  "c7617c06ddccc250": "{ready}/{total} redo",
+  "ad2959492887bf33": "{count} aktiva",
+  "129fbe5b232431ab": "Minst använd",
+  "97823d9ea05f1d3e": "Närmast återställning",
+  "147cae6bb964a2a6": "Turordning",
+  "8cfaa098250ffd84": "Prioritet",
+  "49bdd8e3be027650": "Failover",
+  "3c934ffebdad00be": "Låsta trådar",
+  "ffb4e20efe808e27": "Paus: {details}",
+  "ff969f7282512fab": "Poolsynk",
+  "7ad77414eab61696": "Synka mellan enheter",
+  "545df693b1880fd3": "Dela pauser och krypterade kontopaket mellan {environment} och dina andra enheter.",
+  "7a614de3775b0581": "Roll",
+  "8f3eafc587126324": "Kör synk-API:t och lagrar det krypterade valvet.",
+  "4660b6349187aa9d": "Synkar pauser och konton med din Hub.",
+  "aab48824fdd6af28": "Hub (server)",
+  "660e0823e59a2fc8": "Klient",
+  "1a50f6a629c6a895": "Hub-URL",
+  "412bb40a134c6f25": "Adressen till din Hub-server.",
+  "8952a55d58d537a3": "Synktoken",
+  "d0c2884f0b6ce633": "Delad token för åtkomst till Hub-API:t.",
+  "9dcd7d955d0da507": "Rensa synktoken",
+  "67cbdc093cf9b337": "Valvlösenord",
+  "5cbd7e072955fc99": "Krypterar kontopaket lokalt (AES-256-GCM). Skickas aldrig till servern.",
+  "00d3404d0eafd949": "Rensa valvlösenord",
+  "547dd3dbcc37c4d8": "Inkludera kontotokens",
+  "b38328ba22986e84": "Synka sparade leverantörstokens tillsammans med poolinställningarna.",
+  "8604fba3d5352927": "Valvåtgärder",
+  "6e82826b36fd4c39": "Uppdaterat {time} · {cooldowns} pausade.",
+  "6ef81f0fa56bc132": "Spara denna Hubs pooler och konton i det krypterade valvet.",
+  "f8929a656cee716e": "Skicka från din huvudenhet och hämta på en annan.",
+  "9f6c118033dbc9c7": "Synka",
+  "5204c2278bf91b22": "Skicka valv",
+  "670e93392362d3eb": "Hämta valv",
+  "408262187d626e4d": "Klart.",
+  "2132f4541d185d54": "Begäran misslyckades (HTTP {status}).",
+  "93c129213064cc7d": "Ta bort poolen {name}",
+  "1db10e0c4c753e7f": "Ta bort {name}?",
+  "0fd49f2453acfe07": "Själva kontona påverkas inte och visas var för sig igen.",
+  "1665468ebe11df1d": "Ta bort pool",
+  "f16987812aff0d1f": "Redigera pool",
+  "1ebcc10ce285a8ba": "Ny pool",
+  "f81e97a1799e8564": "Valda konton visas som en enda post i modellväljaren.",
+  "40d503c55341ad4b": "Poolnamn",
+  "71a38821c247a370": "t.ex. Antigravity Pool",
+  "0d64a0a72583792e": "Fördelning",
+  "c8eca46a29a454d5": "Konton ({count})",
+  "ce4ddc84d2146f5a": "Rensa alla",
+  "b3f12be78c2bcad9": "Inga konton för den här leverantören än.",
+  "a553be36e93303cd": "Redo",
+  "6fffd817251576ba": "Begränsad",
+  "d66b287f60ccdeb5": "Automatisk växling vid gräns",
+  "a07b362abafc5379": "Byt till ett annat fungerande konto och fortsätt.",
+  "743f77ebc2b5ddc4": "Håll tråden på samma konto",
+  "eddf07c62c000c65": "Använd samma konto per tråd tills kvoten tar slut."
 }

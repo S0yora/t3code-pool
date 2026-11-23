@@ -14,7 +14,7 @@ import {
   isSecretReference,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
-import { msg, T, useGT, useMessages, Var } from "gt-react";
+import { msg, useGT, useMessages } from "gt-react";
 import {
   CloudDownloadIcon,
   CloudUploadIcon,
@@ -82,11 +82,19 @@ const POOL_STRATEGIES: ReadonlyArray<{
   readonly value: ProviderPoolStrategy;
   readonly label: string;
 }> = [
-  { value: "least_used", label: msg("Least used quota") },
-  { value: "earliest_reset", label: msg("Earliest reset") },
+  { value: "least_used", label: msg("Least used") },
+  { value: "earliest_reset", label: msg("Soonest reset") },
   { value: "round_robin", label: msg("Round robin") },
-  { value: "priority", label: msg("Priority order") },
+  { value: "priority", label: msg("Priority") },
 ];
+
+const ACCOUNT_STATUS_LABELS: Readonly<Record<string, string>> = {
+  ready: msg("Ready"),
+  disabled: msg("Disabled"),
+  warning: msg("Limited"),
+  error: msg("Unavailable"),
+  unknown: msg("Not checked"),
+};
 
 function isConfiguredSecret(value: unknown): boolean {
   if (isSecretReference(value)) return true;
@@ -307,7 +315,7 @@ export function ProviderPoolsSettings({
       res.data?.detail ??
       res.error ??
       (res.ok
-        ? gt("Completed.")
+        ? gt("Done.")
         : res.status === 0
           ? gt("Environment is not connected.")
           : gt("Request failed (HTTP {status}).", { status: res.status }));
@@ -315,10 +323,10 @@ export function ProviderPoolsSettings({
       type: res.ok && res.data?.ok !== false ? "success" : "error",
       title:
         action === "push"
-          ? gt("Push encrypted vault")
+          ? gt("Push vault")
           : action === "pull"
-            ? gt("Pull encrypted vault")
-            : gt("Pool hub sync"),
+            ? gt("Pull vault")
+            : gt("Pool sync"),
       description: detail,
     });
     if (res.ok) {
@@ -355,12 +363,12 @@ export function ProviderPoolsSettings({
                 className={isRefreshingStatus ? "size-3 animate-spin" : "size-3"}
                 aria-hidden
               />
-              <T>Status</T>
+              {gt("Status")}
             </Button>
             {editable ? (
               <Button size="xs" variant="outline" onClick={() => setEditingPool({ poolId: null })}>
                 <PlusIcon className="size-3" aria-hidden />
-                <T>Add pool</T>
+                {gt("Add pool")}
               </Button>
             ) : null}
           </div>
@@ -373,15 +381,13 @@ export function ProviderPoolsSettings({
                 title={
                   <span className="inline-flex items-center gap-2">
                     <LayersIcon className="size-3.5 text-muted-foreground" aria-hidden />
-                    {gt("{count} unpooled {driver} accounts detected", {
+                    {gt("{count} {driver} accounts not in a pool", {
                       count: ids.length,
                       driver: driverLabel(driver),
                     })}
                   </span>
                 }
-                description={gt(
-                  "Group them into a single agent entry with automatic least-used routing and quota failover.",
-                )}
+                description={gt("Combine them into one entry with automatic failover.")}
                 control={
                   <Button
                     size="xs"
@@ -404,15 +410,15 @@ export function ProviderPoolsSettings({
                       });
                       toastManager.add({
                         type: "success",
-                        title: gt("Account pool created"),
-                        description: gt("{name} now combines {count} accounts.", {
+                        title: gt("Pool created"),
+                        description: gt("{name}: {count} accounts.", {
                           name: displayName,
                           count: ids.length,
                         }),
                       });
                     }}
                   >
-                    <T>Create pool</T>
+                    {gt("Create pool")}
                   </Button>
                 }
               />
@@ -421,10 +427,8 @@ export function ProviderPoolsSettings({
 
         {poolEntries.length === 0 ? (
           <SettingsRow
-            title={gt("No account pools configured.")}
-            description={gt(
-              "Add multiple accounts for Codex, Antigravity, or Claude above, then combine them into a pool.",
-            )}
+            title={gt("No pools yet.")}
+            description={gt("Add two or more accounts above, then group them into a pool.")}
           />
         ) : (
           poolEntries.map(([poolId, pool]) => {
@@ -474,7 +478,7 @@ export function ProviderPoolsSettings({
                   <span className="flex flex-col gap-1">
                     <span>
                       {strategyLabel}
-                      {pool.autoFailover ? ` · ${gt("Auto-failover")}` : ""}
+                      {pool.autoFailover ? ` · ${gt("Failover")}` : ""}
                       {pool.stickyThread ? ` · ${gt("Sticky threads")}` : ""}
                     </span>
                     {cooldownMembers.length > 0 ? (
@@ -528,11 +532,11 @@ export function ProviderPoolsSettings({
         )}
       </SettingsSection>
 
-      <SettingsSection title={gt("Multi-device pool sync & encrypted vault")}>
+      <SettingsSection title={gt("Pool sync")}>
         <SettingsRow
-          title={gt("Enable pool sync")}
+          title={gt("Sync across devices")}
           description={gt(
-            "Run {environment} as a central Hub (for example on your always-on server) or as a Client that syncs cooldowns and encrypted vaults with the Hub.",
+            "Share cooldowns and encrypted account bundles between {environment} and your other devices.",
             { environment: environmentLabel },
           )}
           control={
@@ -549,13 +553,11 @@ export function ProviderPoolsSettings({
         {sync.enabled ? (
           <>
             <SettingsRow
-              title={gt("Sync role")}
+              title={gt("Role")}
               description={
                 sync.mode === "hub"
-                  ? gt(
-                      "Serves /api/pool-hub/* for your other machines and stores the encrypted vault.",
-                    )
-                  : gt("Periodically exchanges cooldowns and leases with your Hub server.")
+                  ? gt("Hosts the sync API and stores the encrypted vault.")
+                  : gt("Syncs cooldowns and accounts with your Hub.")
               }
               control={
                 <Select
@@ -573,8 +575,8 @@ export function ProviderPoolsSettings({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectPopup align="end">
-                    <SelectItem value="hub">{gt("Hub (central server)")}</SelectItem>
-                    <SelectItem value="client">{gt("Client (sync to hub)")}</SelectItem>
+                    <SelectItem value="hub">{gt("Hub (server)")}</SelectItem>
+                    <SelectItem value="client">{gt("Client")}</SelectItem>
                   </SelectPopup>
                 </Select>
               }
@@ -583,7 +585,7 @@ export function ProviderPoolsSettings({
             {sync.mode === "client" ? (
               <SettingsRow
                 title={gt("Hub URL")}
-                description={gt("Base HTTP/HTTPS URL of your central T3 Code Hub server.")}
+                description={gt("URL of your Hub server.")}
                 control={
                   <DraftInput
                     size="sm"
@@ -600,8 +602,8 @@ export function ProviderPoolsSettings({
             ) : null}
 
             <SettingsRow
-              title={gt("Sync bearer token")}
-              description={gt("Shared secret authenticating clients against the Hub API.")}
+              title={gt("Sync token")}
+              description={gt("Shared token for Hub API access.")}
               control={
                 <div className="flex items-center gap-1.5">
                   <SecretInput
@@ -627,9 +629,9 @@ export function ProviderPoolsSettings({
             />
 
             <SettingsRow
-              title={gt("Vault encryption passphrase")}
+              title={gt("Vault passphrase")}
               description={gt(
-                "Used locally for AES-256-GCM encryption before pushing or after pulling account bundles. Never sent in plaintext.",
+                "Encrypts account bundles locally (AES-256-GCM). Never sent to the server.",
               )}
               control={
                 <div className="flex items-center gap-1.5">
@@ -658,10 +660,8 @@ export function ProviderPoolsSettings({
             />
 
             <SettingsRow
-              title={gt("Include account credentials in vault")}
-              description={gt(
-                "Encrypt and sync stored provider tokens (Codex, Claude, etc.) alongside pool configuration.",
-              )}
+              title={gt("Include account tokens")}
+              description={gt("Sync saved provider tokens along with pool settings.")}
               control={
                 <Switch
                   checked={sync.syncCredentials}
@@ -674,18 +674,16 @@ export function ProviderPoolsSettings({
             />
 
             <SettingsRow
-              title={sync.mode === "hub" ? gt("Hub vault actions") : gt("Vault & cooldown actions")}
+              title={gt("Vault actions")}
               description={
                 status?.bundleUpdatedAtMs
-                  ? gt("Encrypted bundle stored at {time} · {cooldowns} active cooldown(s).", {
+                  ? gt("Vault updated {time} · {cooldowns} on cooldown.", {
                       time: new Date(status.bundleUpdatedAtMs).toLocaleString(),
                       cooldowns: activeCooldownByInstance.size,
                     })
                   : sync.mode === "hub"
-                    ? gt(
-                        "Push pools and accounts from this Hub into the encrypted vault so client devices can pull them.",
-                      )
-                    : gt("Push accounts from your primary device, then pull on any other device.")
+                    ? gt("Save this Hub's pools and accounts to the encrypted vault.")
+                    : gt("Push from your main device, then pull on another.")
               }
               control={
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -700,7 +698,7 @@ export function ProviderPoolsSettings({
                         className={busyAction === "sync" ? "size-3 animate-spin" : "size-3"}
                         aria-hidden
                       />
-                      <T>Sync now</T>
+                      {gt("Sync")}
                     </Button>
                   ) : null}
                   <Button
@@ -710,7 +708,7 @@ export function ProviderPoolsSettings({
                     onClick={() => void runSyncAction("push")}
                   >
                     <CloudUploadIcon className="size-3" aria-hidden />
-                    <T>Push vault</T>
+                    {gt("Push vault")}
                   </Button>
                   <Button
                     size="xs"
@@ -719,7 +717,7 @@ export function ProviderPoolsSettings({
                     onClick={() => void runSyncAction("pull")}
                   >
                     <CloudDownloadIcon className="size-3" aria-hidden />
-                    <T>Pull vault</T>
+                    {gt("Pull vault")}
                   </Button>
                 </div>
               }
@@ -770,21 +768,14 @@ function RemovePoolButton({
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogPopup>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              <T>
-                Remove pool <Var>{label}</Var>?
-              </T>
-            </AlertDialogTitle>
+            <AlertDialogTitle>{gt("Remove {name}?", { name: label })}</AlertDialogTitle>
             <AlertDialogDescription>
-              <T>
-                The underlying provider accounts are kept untouched and will appear individually in
-                the model picker again.
-              </T>
+              {gt("The accounts themselves stay untouched and will show up separately again.")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogClose render={<Button variant="outline" />}>
-              <T>Cancel</T>
+              {gt("Cancel")}
             </AlertDialogClose>
             <Button
               variant="destructive"
@@ -793,7 +784,7 @@ function RemovePoolButton({
                 setOpen(false);
               }}
             >
-              <T>Remove pool</T>
+              {gt("Remove pool")}
             </Button>
           </AlertDialogFooter>
         </AlertDialogPopup>
@@ -868,14 +859,9 @@ function PoolEditorDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogPopup className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>
-            {existingPool ? gt("Edit account pool") : gt("Create account pool")}
-          </DialogTitle>
+          <DialogTitle>{existingPool ? gt("Edit pool") : gt("New pool")}</DialogTitle>
           <DialogDescription>
-            <T>
-              Selected accounts will collapse into a single agent in the model picker and share load
-              automatically.
-            </T>
+            {gt("Selected accounts appear as one entry in the model picker.")}
           </DialogDescription>
         </DialogHeader>
         <DialogPanel>
@@ -899,9 +885,7 @@ function PoolEditorDialog({
             }}
           >
             <div className="grid gap-1.5">
-              <Label htmlFor="pool-display-name">
-                <T>Pool display name</T>
-              </Label>
+              <Label htmlFor="pool-display-name">{gt("Pool name")}</Label>
               <Input
                 id="pool-display-name"
                 value={displayName}
@@ -913,9 +897,7 @@ function PoolEditorDialog({
 
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-1.5">
-                <Label>
-                  <T>Provider</T>
-                </Label>
+                <Label>{gt("Provider")}</Label>
                 <Select
                   value={driver}
                   disabled={existingPool !== undefined}
@@ -945,9 +927,7 @@ function PoolEditorDialog({
               </div>
 
               <div className="grid gap-1.5">
-                <Label>
-                  <T>Routing strategy</T>
-                </Label>
+                <Label>{gt("Routing")}</Label>
                 <Select
                   value={strategy}
                   onValueChange={(next) => {
@@ -970,11 +950,7 @@ function PoolEditorDialog({
 
             <div className="grid gap-2">
               <div className="flex items-center justify-between">
-                <Label>
-                  <T>
-                    Member accounts (<Var>{selectedMembers.length}</Var>)
-                  </T>
-                </Label>
+                <Label>{gt("Accounts ({count})", { count: selectedMembers.length })}</Label>
                 {driverAccounts.length > 0 ? (
                   <Button
                     type="button"
@@ -997,7 +973,7 @@ function PoolEditorDialog({
 
               {driverAccounts.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
-                  <T>No accounts found for this provider yet.</T>
+                  {gt("No accounts for this provider yet.")}
                 </p>
               ) : (
                 <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border border-border/70 p-2">
@@ -1024,7 +1000,9 @@ function PoolEditorDialog({
                           variant={account.status === "ready" ? "secondary" : "outline"}
                           size="sm"
                         >
-                          {account.status}
+                          {ACCOUNT_STATUS_LABELS[account.status]
+                            ? m(ACCOUNT_STATUS_LABELS[account.status]!)
+                            : account.status}
                         </Badge>
                       </label>
                     );
@@ -1036,11 +1014,9 @@ function PoolEditorDialog({
             <div className="grid gap-2.5 pt-1">
               <label className="flex items-center justify-between gap-3 text-sm">
                 <span>
-                  <span className="block font-medium">
-                    <T>Auto-failover on quota / rate limit</T>
-                  </span>
+                  <span className="block font-medium">{gt("Auto-failover on rate limit")}</span>
                   <span className="text-xs text-muted-foreground">
-                    <T>Automatically switch to another healthy account and resume the run.</T>
+                    {gt("Switch to another healthy account and keep going.")}
                   </span>
                 </span>
                 <Switch checked={autoFailover} onCheckedChange={setAutoFailover} />
@@ -1048,11 +1024,9 @@ function PoolEditorDialog({
 
               <label className="flex items-center justify-between gap-3 text-sm">
                 <span>
-                  <span className="block font-medium">
-                    <T>Sticky thread affinity</T>
-                  </span>
+                  <span className="block font-medium">{gt("Keep thread on same account")}</span>
                   <span className="text-xs text-muted-foreground">
-                    <T>Keep a thread on the same account to preserve cache until quota runs out.</T>
+                    {gt("Reuse the same account per thread until its quota runs out.")}
                   </span>
                 </span>
                 <Switch checked={stickyThread} onCheckedChange={setStickyThread} />
@@ -1062,10 +1036,10 @@ function PoolEditorDialog({
         </DialogPanel>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-            <T>Cancel</T>
+            {gt("Cancel")}
           </Button>
           <Button type="submit" form={formId} disabled={!canSave}>
-            {existingPool ? gt("Save pool") : gt("Create pool")}
+            {existingPool ? gt("Save") : gt("Create pool")}
           </Button>
         </DialogFooter>
       </DialogPopup>

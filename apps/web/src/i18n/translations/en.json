@@ -3208,7 +3208,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "on the computer that opened this page"]
+      "c": [
+        " ",
+        "on the computer that opened this page"
+      ]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3220,7 +3223,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "· whoever runs it gets this access"]
+      "c": [
+        " ",
+        "· whoever runs it gets this access"
+      ]
     }
   ],
   "c54cc9c75db9dc58": "Only approve a sign-in you just started.",
@@ -12795,5 +12801,73 @@
   "99d51127f573296b": "Another account",
   "8ec2c57414669b79": "Connect a second {tracker} workspace or user.",
   "99963c0142e17f00": "For the new {tracker} account.",
-  "6d8e4ebc889bace9": "Add account"
+  "6d8e4ebc889bace9": "Add account",
+  "3988eebd2096efc4": "Auto-refresh provider status",
+  "3042c168554b3a15": "Check status and models automatically when enabling a provider or starting with unchecked accounts.",
+  "5f93694a8f2886f3": "{name} ({ready}/{total} ready)",
+  "787b1f346bd4aa50": "Account pools",
+  "270a421fc9d6f15e": "Refresh pool status",
+  "aae458feb4b7beea": "Add pool",
+  "8da51057b194ec5e": "{count} {driver} accounts not in a pool",
+  "0b0e2beff4b60413": "Combine them into one entry with automatic failover.",
+  "5506e029e195881d": "Pool created",
+  "c35c83065fc9239c": "{name}: {count} accounts.",
+  "713da3899c03b306": "Create pool",
+  "a071ff069b6f3ee8": "No pools yet.",
+  "fb8265927a585976": "Add two or more accounts above, then group them into a pool.",
+  "c7617c06ddccc250": "{ready}/{total} ready",
+  "ad2959492887bf33": "{count} active",
+  "129fbe5b232431ab": "Least used",
+  "97823d9ea05f1d3e": "Soonest reset",
+  "147cae6bb964a2a6": "Round robin",
+  "8cfaa098250ffd84": "Priority",
+  "49bdd8e3be027650": "Failover",
+  "3c934ffebdad00be": "Sticky threads",
+  "ffb4e20efe808e27": "Cooldown: {details}",
+  "ff969f7282512fab": "Pool sync",
+  "7ad77414eab61696": "Sync across devices",
+  "545df693b1880fd3": "Share cooldowns and encrypted account bundles between {environment} and your other devices.",
+  "7a614de3775b0581": "Role",
+  "8f3eafc587126324": "Hosts the sync API and stores the encrypted vault.",
+  "4660b6349187aa9d": "Syncs cooldowns and accounts with your Hub.",
+  "aab48824fdd6af28": "Hub (server)",
+  "660e0823e59a2fc8": "Client",
+  "1a50f6a629c6a895": "Hub URL",
+  "412bb40a134c6f25": "URL of your Hub server.",
+  "8952a55d58d537a3": "Sync token",
+  "d0c2884f0b6ce633": "Shared token for Hub API access.",
+  "9dcd7d955d0da507": "Clear sync token",
+  "67cbdc093cf9b337": "Vault passphrase",
+  "5cbd7e072955fc99": "Encrypts account bundles locally (AES-256-GCM). Never sent to the server.",
+  "00d3404d0eafd949": "Clear vault passphrase",
+  "547dd3dbcc37c4d8": "Include account tokens",
+  "b38328ba22986e84": "Sync saved provider tokens along with pool settings.",
+  "8604fba3d5352927": "Vault actions",
+  "6e82826b36fd4c39": "Vault updated {time} · {cooldowns} on cooldown.",
+  "6ef81f0fa56bc132": "Save this Hub's pools and accounts to the encrypted vault.",
+  "f8929a656cee716e": "Push from your main device, then pull on another.",
+  "9f6c118033dbc9c7": "Sync",
+  "5204c2278bf91b22": "Push vault",
+  "670e93392362d3eb": "Pull vault",
+  "408262187d626e4d": "Done.",
+  "2132f4541d185d54": "Request failed (HTTP {status}).",
+  "93c129213064cc7d": "Remove pool {name}",
+  "1db10e0c4c753e7f": "Remove {name}?",
+  "0fd49f2453acfe07": "The accounts themselves stay untouched and will show up separately again.",
+  "1665468ebe11df1d": "Remove pool",
+  "f16987812aff0d1f": "Edit pool",
+  "1ebcc10ce285a8ba": "New pool",
+  "f81e97a1799e8564": "Selected accounts appear as one entry in the model picker.",
+  "40d503c55341ad4b": "Pool name",
+  "71a38821c247a370": "e.g. Antigravity Pool",
+  "0d64a0a72583792e": "Routing",
+  "c8eca46a29a454d5": "Accounts ({count})",
+  "ce4ddc84d2146f5a": "Clear all",
+  "b3f12be78c2bcad9": "No accounts for this provider yet.",
+  "a553be36e93303cd": "Ready",
+  "6fffd817251576ba": "Limited",
+  "d66b287f60ccdeb5": "Auto-failover on rate limit",
+  "a07b362abafc5379": "Switch to another healthy account and keep going.",
+  "743f77ebc2b5ddc4": "Keep thread on same account",
+  "eddf07c62c000c65": "Reuse the same account per thread until its quota runs out."
 }

@@ -3209,7 +3209,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "auf dem Computer, der diese Seite geöffnet hat"]
+      "c": [
+        " ",
+        "auf dem Computer, der diese Seite geöffnet hat"
+      ]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3221,7 +3224,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "· wer es ausführt, erhält diesen Zugriff"]
+      "c": [
+        " ",
+        "· wer es ausführt, erhält diesen Zugriff"
+      ]
     }
   ],
   "c54cc9c75db9dc58": "Genehmige nur eine Anmeldung, die du gerade selbst gestartet hast.",
@@ -12786,5 +12792,73 @@
   "99d51127f573296b": "Weiteres Konto",
   "8ec2c57414669b79": "Verbinde einen zweiten {tracker}-Workspace oder -Nutzer.",
   "99963c0142e17f00": "Für das neue {tracker}-Konto.",
-  "6d8e4ebc889bace9": "Konto hinzufügen"
+  "6d8e4ebc889bace9": "Konto hinzufügen",
+  "3988eebd2096efc4": "Provider-Status automatisch aktualisieren",
+  "3042c168554b3a15": "Status und Modelle automatisch prüfen, wenn ein Provider aktiviert wird oder ungeprüfte Konten vorhanden sind.",
+  "5f93694a8f2886f3": "{name} ({ready}/{total} bereit)",
+  "787b1f346bd4aa50": "Konto-Pools",
+  "270a421fc9d6f15e": "Pool-Status aktualisieren",
+  "aae458feb4b7beea": "Pool hinzufügen",
+  "8da51057b194ec5e": "{count} {driver}-Konten ohne Pool",
+  "0b0e2beff4b60413": "Zu einem Eintrag mit automatischem Failover zusammenfassen.",
+  "5506e029e195881d": "Pool erstellt",
+  "c35c83065fc9239c": "{name}: {count} Konten.",
+  "713da3899c03b306": "Pool erstellen",
+  "a071ff069b6f3ee8": "Noch keine Pools.",
+  "fb8265927a585976": "Füge oben zwei oder mehr Konten hinzu und fasse sie zu einem Pool zusammen.",
+  "c7617c06ddccc250": "{ready}/{total} bereit",
+  "ad2959492887bf33": "{count} aktiv",
+  "129fbe5b232431ab": "Am wenigsten genutzt",
+  "97823d9ea05f1d3e": "Nächster Reset",
+  "147cae6bb964a2a6": "Reihum",
+  "8cfaa098250ffd84": "Priorität",
+  "49bdd8e3be027650": "Failover",
+  "3c934ffebdad00be": "Thread-Bindung",
+  "ffb4e20efe808e27": "Abklingzeit: {details}",
+  "ff969f7282512fab": "Pool-Sync",
+  "7ad77414eab61696": "Geräteübergreifend synchronisieren",
+  "545df693b1880fd3": "Teile Abklingzeiten und verschlüsselte Konto-Bundles zwischen {environment} und deinen anderen Geräten.",
+  "7a614de3775b0581": "Rolle",
+  "8f3eafc587126324": "Stellt die Sync-API bereit und speichert den verschlüsselten Tresor.",
+  "4660b6349187aa9d": "Synchronisiert Abklingzeiten und Konten mit deinem Hub.",
+  "aab48824fdd6af28": "Hub (Server)",
+  "660e0823e59a2fc8": "Client",
+  "1a50f6a629c6a895": "Hub-URL",
+  "412bb40a134c6f25": "URL deines Hub-Servers.",
+  "8952a55d58d537a3": "Sync-Token",
+  "d0c2884f0b6ce633": "Gemeinsames Token für den Zugriff auf die Hub-API.",
+  "9dcd7d955d0da507": "Sync-Token löschen",
+  "67cbdc093cf9b337": "Tresor-Passphrase",
+  "5cbd7e072955fc99": "Verschlüsselt Konto-Bundles lokal (AES-256-GCM). Wird nie an den Server gesendet.",
+  "00d3404d0eafd949": "Tresor-Passphrase löschen",
+  "547dd3dbcc37c4d8": "Konto-Tokens einschließen",
+  "b38328ba22986e84": "Gespeicherte Provider-Tokens zusammen mit den Pool-Einstellungen synchronisieren.",
+  "8604fba3d5352927": "Tresor-Aktionen",
+  "6e82826b36fd4c39": "Tresor aktualisiert {time} · {cooldowns} in Abklingzeit.",
+  "6ef81f0fa56bc132": "Pools und Konten dieses Hubs im verschlüsselten Tresor speichern.",
+  "f8929a656cee716e": "Vom Hauptgerät hochladen und auf einem anderen abrufen.",
+  "9f6c118033dbc9c7": "Sync",
+  "5204c2278bf91b22": "Hochladen",
+  "670e93392362d3eb": "Abrufen",
+  "408262187d626e4d": "Fertig.",
+  "2132f4541d185d54": "Anfrage fehlgeschlagen (HTTP {status}).",
+  "93c129213064cc7d": "Pool {name} entfernen",
+  "1db10e0c4c753e7f": "{name} entfernen?",
+  "0fd49f2453acfe07": "Die Konten selbst bleiben erhalten und erscheinen wieder einzeln.",
+  "1665468ebe11df1d": "Pool entfernen",
+  "f16987812aff0d1f": "Pool bearbeiten",
+  "1ebcc10ce285a8ba": "Neuer Pool",
+  "f81e97a1799e8564": "Ausgewählte Konten erscheinen als ein Eintrag in der Modellauswahl.",
+  "40d503c55341ad4b": "Pool-Name",
+  "71a38821c247a370": "z. B. Antigravity Pool",
+  "0d64a0a72583792e": "Verteilung",
+  "c8eca46a29a454d5": "Konten ({count})",
+  "ce4ddc84d2146f5a": "Alle abwählen",
+  "b3f12be78c2bcad9": "Noch keine Konten für diesen Provider.",
+  "a553be36e93303cd": "Bereit",
+  "6fffd817251576ba": "Eingeschränkt",
+  "d66b287f60ccdeb5": "Automatisches Failover bei Limit",
+  "a07b362abafc5379": "Auf ein anderes freies Konto wechseln und weitermachen.",
+  "743f77ebc2b5ddc4": "Thread auf demselben Konto halten",
+  "eddf07c62c000c65": "Dasselbe Konto pro Thread weiterverwenden, bis das Kontingent erschöpft ist."
 }

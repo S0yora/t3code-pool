@@ -3208,7 +3208,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "sur l’ordinateur qui a ouvert cette page"]
+      "c": [
+        " ",
+        "sur l’ordinateur qui a ouvert cette page"
+      ]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3220,7 +3223,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "· quiconque l’exécute obtient cet accès"]
+      "c": [
+        " ",
+        "· quiconque l’exécute obtient cet accès"
+      ]
     }
   ],
   "c54cc9c75db9dc58": "N’approuvez qu’une connexion que vous venez de lancer.",
@@ -12786,5 +12792,73 @@
   "99d51127f573296b": "Autre compte",
   "8ec2c57414669b79": "Connectez un second espace de travail ou utilisateur {tracker}.",
   "99963c0142e17f00": "Pour le nouveau compte {tracker}.",
-  "6d8e4ebc889bace9": "Ajouter un compte"
+  "6d8e4ebc889bace9": "Ajouter un compte",
+  "3988eebd2096efc4": "Actualisation auto du statut des fournisseurs",
+  "3042c168554b3a15": "Vérifier automatiquement le statut et les modèles à l’activation d’un fournisseur ou au démarrage avec des comptes non vérifiés.",
+  "5f93694a8f2886f3": "{name} ({ready}/{total} prêts)",
+  "787b1f346bd4aa50": "Pools de comptes",
+  "270a421fc9d6f15e": "Actualiser le statut des pools",
+  "aae458feb4b7beea": "Ajouter un pool",
+  "8da51057b194ec5e": "{count} comptes {driver} hors pool",
+  "0b0e2beff4b60413": "Les regrouper en une seule entrée avec bascule automatique.",
+  "5506e029e195881d": "Pool créé",
+  "c35c83065fc9239c": "{name} : {count} comptes.",
+  "713da3899c03b306": "Créer le pool",
+  "a071ff069b6f3ee8": "Aucun pool pour l’instant.",
+  "fb8265927a585976": "Ajoutez au moins deux comptes ci-dessus, puis regroupez-les dans un pool.",
+  "c7617c06ddccc250": "{ready}/{total} prêts",
+  "ad2959492887bf33": "{count} actifs",
+  "129fbe5b232431ab": "Moins utilisé",
+  "97823d9ea05f1d3e": "Réinitialisation la plus proche",
+  "147cae6bb964a2a6": "À tour de rôle",
+  "8cfaa098250ffd84": "Priorité",
+  "49bdd8e3be027650": "Bascule auto",
+  "3c934ffebdad00be": "Fils épinglés",
+  "ffb4e20efe808e27": "Pause : {details}",
+  "ff969f7282512fab": "Synchronisation des pools",
+  "7ad77414eab61696": "Synchroniser entre appareils",
+  "545df693b1880fd3": "Partagez les temps de pause et les coffres de comptes chiffrés entre {environment} et vos autres appareils.",
+  "7a614de3775b0581": "Rôle",
+  "8f3eafc587126324": "Héberge l’API de synchro et stocke le coffre chiffré.",
+  "4660b6349187aa9d": "Synchronise les pauses et les comptes avec votre Hub.",
+  "aab48824fdd6af28": "Hub (serveur)",
+  "660e0823e59a2fc8": "Client",
+  "1a50f6a629c6a895": "URL du Hub",
+  "412bb40a134c6f25": "Adresse de votre serveur Hub.",
+  "8952a55d58d537a3": "Jeton de synchro",
+  "d0c2884f0b6ce633": "Jeton partagé pour accéder à l’API du Hub.",
+  "9dcd7d955d0da507": "Effacer le jeton de synchro",
+  "67cbdc093cf9b337": "Mot de passe du coffre",
+  "5cbd7e072955fc99": "Chiffre les comptes en local (AES-256-GCM). Jamais envoyé au serveur.",
+  "00d3404d0eafd949": "Effacer le mot de passe du coffre",
+  "547dd3dbcc37c4d8": "Inclure les jetons des comptes",
+  "b38328ba22986e84": "Synchroniser les jetons enregistrés avec la configuration des pools.",
+  "8604fba3d5352927": "Actions du coffre",
+  "6e82826b36fd4c39": "Coffre mis à jour {time} · {cooldowns} en pause.",
+  "6ef81f0fa56bc132": "Enregistrez les pools et comptes de ce Hub dans le coffre chiffré.",
+  "f8929a656cee716e": "Envoyez depuis votre appareil principal, puis récupérez sur un autre.",
+  "9f6c118033dbc9c7": "Synchroniser",
+  "5204c2278bf91b22": "Envoyer le coffre",
+  "670e93392362d3eb": "Récupérer le coffre",
+  "408262187d626e4d": "Terminé.",
+  "2132f4541d185d54": "Échec de la requête (HTTP {status}).",
+  "93c129213064cc7d": "Supprimer le pool {name}",
+  "1db10e0c4c753e7f": "Supprimer {name} ?",
+  "0fd49f2453acfe07": "Les comptes restent intacts et réapparaîtront séparément.",
+  "1665468ebe11df1d": "Supprimer le pool",
+  "f16987812aff0d1f": "Modifier le pool",
+  "1ebcc10ce285a8ba": "Nouveau pool",
+  "f81e97a1799e8564": "Les comptes sélectionnés apparaissent comme une seule entrée dans le sélecteur de modèles.",
+  "40d503c55341ad4b": "Nom du pool",
+  "71a38821c247a370": "ex. Antigravity Pool",
+  "0d64a0a72583792e": "Répartition",
+  "c8eca46a29a454d5": "Comptes ({count})",
+  "ce4ddc84d2146f5a": "Tout effacer",
+  "b3f12be78c2bcad9": "Aucun compte pour ce fournisseur pour l’instant.",
+  "a553be36e93303cd": "Prêt",
+  "6fffd817251576ba": "Limité",
+  "d66b287f60ccdeb5": "Bascule auto en cas de limite",
+  "a07b362abafc5379": "Basculer vers un autre compte disponible et continuer.",
+  "743f77ebc2b5ddc4": "Garder le fil sur le même compte",
+  "eddf07c62c000c65": "Réutiliser le même compte par fil jusqu’à épuisement de son quota."
 }

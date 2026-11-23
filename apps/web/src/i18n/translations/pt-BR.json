@@ -3208,7 +3208,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "no computador que abriu esta página"]
+      "c": [
+        " ",
+        "no computador que abriu esta página"
+      ]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3220,7 +3223,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "· quem executar recebe este acesso"]
+      "c": [
+        " ",
+        "· quem executar recebe este acesso"
+      ]
     }
   ],
   "c54cc9c75db9dc58": "Aprove apenas um login que você acabou de iniciar.",
@@ -12786,5 +12792,73 @@
   "99d51127f573296b": "Outra conta",
   "8ec2c57414669b79": "Conecte um segundo espaço de trabalho ou usuário do {tracker}.",
   "99963c0142e17f00": "Para a nova conta do {tracker}.",
-  "6d8e4ebc889bace9": "Adicionar conta"
+  "6d8e4ebc889bace9": "Adicionar conta",
+  "3988eebd2096efc4": "Atualizar status dos provedores automaticamente",
+  "3042c168554b3a15": "Verificar status e modelos automaticamente ao ativar um provedor ou iniciar com contas não verificadas.",
+  "5f93694a8f2886f3": "{name} ({ready}/{total} prontos)",
+  "787b1f346bd4aa50": "Pools de contas",
+  "270a421fc9d6f15e": "Atualizar status dos pools",
+  "aae458feb4b7beea": "Adicionar pool",
+  "8da51057b194ec5e": "{count} contas {driver} fora de um pool",
+  "0b0e2beff4b60413": "Junte tudo em uma única entrada com troca automática.",
+  "5506e029e195881d": "Pool criado",
+  "c35c83065fc9239c": "{name}: {count} contas.",
+  "713da3899c03b306": "Criar pool",
+  "a071ff069b6f3ee8": "Nenhum pool ainda.",
+  "fb8265927a585976": "Adicione duas ou mais contas acima e agrupe-as em um pool.",
+  "c7617c06ddccc250": "{ready}/{total} prontos",
+  "ad2959492887bf33": "{count} ativos",
+  "129fbe5b232431ab": "Menos usado",
+  "97823d9ea05f1d3e": "Reinício mais próximo",
+  "147cae6bb964a2a6": "Revezamento",
+  "8cfaa098250ffd84": "Prioridade",
+  "49bdd8e3be027650": "Failover",
+  "3c934ffebdad00be": "Threads fixas",
+  "ffb4e20efe808e27": "Espera: {details}",
+  "ff969f7282512fab": "Sincronização de pools",
+  "7ad77414eab61696": "Sincronizar entre dispositivos",
+  "545df693b1880fd3": "Compartilhe pausas e pacotes de contas criptografados entre {environment} e seus outros dispositivos.",
+  "7a614de3775b0581": "Função",
+  "8f3eafc587126324": "Hospeda a API de sincronização e guarda o cofre criptografado.",
+  "4660b6349187aa9d": "Sincroniza pausas e contas com seu Hub.",
+  "aab48824fdd6af28": "Hub (servidor)",
+  "660e0823e59a2fc8": "Cliente",
+  "1a50f6a629c6a895": "URL do Hub",
+  "412bb40a134c6f25": "Endereço do seu servidor Hub.",
+  "8952a55d58d537a3": "Token de sincronização",
+  "d0c2884f0b6ce633": "Token compartilhado para acessar a API do Hub.",
+  "9dcd7d955d0da507": "Limpar token de sincronização",
+  "67cbdc093cf9b337": "Senha do cofre",
+  "5cbd7e072955fc99": "Criptografa os dados das contas localmente (AES-256-GCM). Nunca é enviada ao servidor.",
+  "00d3404d0eafd949": "Limpar senha do cofre",
+  "547dd3dbcc37c4d8": "Incluir tokens das contas",
+  "b38328ba22986e84": "Sincronizar os tokens salvos junto com as configurações dos pools.",
+  "8604fba3d5352927": "Ações do cofre",
+  "6e82826b36fd4c39": "Atualizado em {time} · {cooldowns} em espera.",
+  "6ef81f0fa56bc132": "Salve os pools e contas deste Hub no cofre criptografado.",
+  "f8929a656cee716e": "Envie do seu dispositivo principal e baixe em outro.",
+  "9f6c118033dbc9c7": "Sincronizar",
+  "5204c2278bf91b22": "Enviar cofre",
+  "670e93392362d3eb": "Baixar cofre",
+  "408262187d626e4d": "Pronto.",
+  "2132f4541d185d54": "Falha na requisição (HTTP {status}).",
+  "93c129213064cc7d": "Remover pool {name}",
+  "1db10e0c4c753e7f": "Remover {name}?",
+  "0fd49f2453acfe07": "As contas continuam intactas e voltam a aparecer separadamente.",
+  "1665468ebe11df1d": "Remover pool",
+  "f16987812aff0d1f": "Editar pool",
+  "1ebcc10ce285a8ba": "Novo pool",
+  "f81e97a1799e8564": "As contas selecionadas aparecem como uma única entrada no seletor de modelos.",
+  "40d503c55341ad4b": "Nome do pool",
+  "71a38821c247a370": "ex.: Antigravity Pool",
+  "0d64a0a72583792e": "Distribuição",
+  "c8eca46a29a454d5": "Contas ({count})",
+  "ce4ddc84d2146f5a": "Limpar tudo",
+  "b3f12be78c2bcad9": "Ainda não há contas para este provedor.",
+  "a553be36e93303cd": "Pronto",
+  "6fffd817251576ba": "Limitado",
+  "d66b287f60ccdeb5": "Troca automática ao atingir limite",
+  "a07b362abafc5379": "Troca para outra conta disponível e continua a execução.",
+  "743f77ebc2b5ddc4": "Manter a thread na mesma conta",
+  "eddf07c62c000c65": "Usa a mesma conta por thread até a cota acabar."
 }
