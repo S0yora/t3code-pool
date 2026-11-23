@@ -12860,5 +12860,8 @@
   "d66b287f60ccdeb5": "Bascule auto en cas de limite",
   "a07b362abafc5379": "Basculer vers un autre compte disponible et continuer.",
   "743f77ebc2b5ddc4": "Garder le fil sur le même compte",
-  "eddf07c62c000c65": "Réutiliser le même compte par fil jusqu’à épuisement de son quota."
+  "eddf07c62c000c65": "Réutiliser le même compte par fil jusqu’à épuisement de son quota.",
+  "3f2daa063f3a817a": "Hors pool",
+  "792ec7f67761947b": "Dans {pool}",
+  "2d5db8c803b24d9a": "Uniquement des comptes du même fournisseur. Chaque fournisseur a ses propres modèles."
 }

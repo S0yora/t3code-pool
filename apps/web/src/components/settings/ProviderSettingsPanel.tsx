@@ -105,6 +105,7 @@ import { IntervalSecondsField } from "./IntervalSecondsField";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { useSecretSources } from "./SecretSourceInput";
 import { ProviderPoolsSettings } from "./ProviderPoolsSettings";
+import { ProviderPoolSidebarGroups } from "./ProviderPoolSidebarGroups";
 import { TextGeneratorsSettings } from "./TextGeneratorsSettings";
 import { UsageProviderSettings } from "./UsageProviderSettings";
 import { ProviderSetupSection, readAntigravityAuthMethod } from "./ProviderSetupSection";
@@ -1144,7 +1145,13 @@ export function EnvironmentProviderSettings({
               className="@min-[48rem]/providers:min-h-0 @min-[48rem]/providers:flex-1"
             >
               <div className="divide-y divide-border/50">
-                {rows.map((row) => renderProviderInstance(row, "list"))}
+                <ProviderPoolSidebarGroups
+                  rows={rows}
+                  providerPools={settings.providerPools}
+                  serverProviders={serverProviders}
+                  selectedInstanceId={selectedRow?.instanceId ?? null}
+                  renderRow={(row) => renderProviderInstance(row, "list")}
+                />
                 {canAddProvider ? (
                   <button
                     type="button"

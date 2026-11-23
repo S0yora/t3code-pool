@@ -571,10 +571,12 @@ export function ProviderPoolsSettings({
                     }
                   }}
                 >
-                  <SelectTrigger className="w-40" size="sm">
-                    <SelectValue />
+                  <SelectTrigger className="w-40" size="sm" aria-label={gt("Role")}>
+                    <SelectValue>
+                      {sync.mode === "hub" ? gt("Hub (server)") : gt("Client")}
+                    </SelectValue>
                   </SelectTrigger>
-                  <SelectPopup align="end">
+                  <SelectPopup align="end" alignItemWithTrigger={false}>
                     <SelectItem value="hub">{gt("Hub (server)")}</SelectItem>
                     <SelectItem value="client">{gt("Client")}</SelectItem>
                   </SelectPopup>
@@ -819,12 +821,32 @@ function PoolEditorDialog({
   const gt = useGT();
   const m = useMessages();
   const formId = useId();
+  const accountCountByDriver = new Map<ProviderDriverKind, number>();
+  for (const acc of allAccounts) {
+    accountCountByDriver.set(acc.driver, (accountCountByDriver.get(acc.driver) ?? 0) + 1);
+  }
   const availableDrivers = (() => {
     const set = new Set<ProviderDriverKind>();
     for (const acc of allAccounts) set.add(acc.driver);
     if (existingPool) set.add(existingPool.driver);
-    return [...set];
+    return [...set].sort((a, b) => {
+      const countDiff = (accountCountByDriver.get(b) ?? 0) - (accountCountByDriver.get(a) ?? 0);
+      if (countDiff !== 0) return countDiff;
+      return driverLabel(a).localeCompare(driverLabel(b));
+    });
   })();
+
+  const otherPoolByMember = new Map<ProviderInstanceId, string>();
+  for (const [id, pool] of Object.entries(existingPools) as Array<
+    [ProviderPoolId, ProviderPoolConfig]
+  >) {
+    if (id === poolId) continue;
+    for (const memberId of pool.memberInstanceIds) {
+      if (!otherPoolByMember.has(memberId)) {
+        otherPoolByMember.set(memberId, pool.displayName);
+      }
+    }
+  }
 
   const [driver, setDriver] = useState<ProviderDriverKind>(
     existingPool?.driver ?? availableDrivers[0] ?? ProviderDriverKind.make("codex"),
@@ -844,6 +866,8 @@ function PoolEditorDialog({
   const [stickyThread, setStickyThread] = useState(existingPool?.stickyThread ?? true);
 
   const driverAccounts = allAccounts.filter((account) => account.driver === driver);
+  const selectedStrategyEntry = POOL_STRATEGIES.find((item) => item.value === strategy);
+  const selectedStrategyLabel = selectedStrategyEntry ? m(selectedStrategyEntry.label) : strategy;
 
   const toggleMember = (instanceId: ProviderInstanceId) => {
     setSelectedMembers((current) =>
@@ -895,33 +919,40 @@ function PoolEditorDialog({
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="grid gap-1.5">
                 <Label>{gt("Provider")}</Label>
                 <Select
                   value={driver}
-                  disabled={existingPool !== undefined}
                   onValueChange={(next) => {
                     if (!next) return;
                     const nextDriver = next as ProviderDriverKind;
+                    const prevDefaultName = `${driverLabel(driver)} Pool`;
                     setDriver(nextDriver);
-                    setDisplayName(`${driverLabel(nextDriver)} Pool`);
+                    if (!displayName.trim() || displayName.trim() === prevDefaultName) {
+                      setDisplayName(`${driverLabel(nextDriver)} Pool`);
+                    }
+                    const nextAccounts = allAccounts.filter((a) => a.driver === nextDriver);
+                    const enabledIds = nextAccounts
+                      .filter((a) => a.enabled)
+                      .map((a) => a.instanceId);
                     setSelectedMembers(
-                      allAccounts
-                        .filter((a) => a.driver === nextDriver && a.enabled)
-                        .map((a) => a.instanceId),
+                      enabledIds.length > 0 ? enabledIds : nextAccounts.map((a) => a.instanceId),
                     );
                   }}
                 >
-                  <SelectTrigger size="sm">
-                    <SelectValue />
+                  <SelectTrigger size="sm" className="w-full" aria-label={gt("Provider")}>
+                    <SelectValue>{driverLabel(driver)}</SelectValue>
                   </SelectTrigger>
-                  <SelectPopup>
-                    {availableDrivers.map((item) => (
-                      <SelectItem key={item} value={item}>
-                        {driverLabel(item)}
-                      </SelectItem>
-                    ))}
+                  <SelectPopup align="start" alignItemWithTrigger={false}>
+                    {availableDrivers.map((item) => {
+                      const count = accountCountByDriver.get(item) ?? 0;
+                      return (
+                        <SelectItem key={item} value={item}>
+                          {count > 0 ? `${driverLabel(item)} (${count})` : driverLabel(item)}
+                        </SelectItem>
+                      );
+                    })}
                   </SelectPopup>
                 </Select>
               </div>
@@ -934,10 +965,10 @@ function PoolEditorDialog({
                     if (next) setStrategy(next as ProviderPoolStrategy);
                   }}
                 >
-                  <SelectTrigger size="sm">
-                    <SelectValue />
+                  <SelectTrigger size="sm" className="w-full" aria-label={gt("Routing")}>
+                    <SelectValue>{selectedStrategyLabel}</SelectValue>
                   </SelectTrigger>
-                  <SelectPopup>
+                  <SelectPopup align="start" alignItemWithTrigger={false}>
                     {POOL_STRATEGIES.map((item) => (
                       <SelectItem key={item.value} value={item.value}>
                         {m(item.label)}
@@ -949,7 +980,7 @@ function PoolEditorDialog({
             </div>
 
             <div className="grid gap-2">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <Label>{gt("Accounts ({count})", { count: selectedMembers.length })}</Label>
                 {driverAccounts.length > 0 ? (
                   <Button
@@ -972,65 +1003,97 @@ function PoolEditorDialog({
               </div>
 
               {driverAccounts.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
+                <p className="rounded-lg border border-dashed border-border/70 px-3 py-4 text-center text-xs text-muted-foreground">
                   {gt("No accounts for this provider yet.")}
                 </p>
               ) : (
-                <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border border-border/70 p-2">
+                <div className="max-h-52 divide-y divide-border/40 overflow-y-auto rounded-lg border border-border/70">
                   {driverAccounts.map((account) => {
                     const checked = selectedMembers.includes(account.instanceId);
+                    const otherPoolName = otherPoolByMember.get(account.instanceId);
+                    const showSubId =
+                      account.label.trim().toLowerCase() !==
+                      String(account.instanceId).trim().toLowerCase();
                     return (
                       <label
                         key={account.instanceId}
-                        className="flex cursor-pointer items-center justify-between gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted/40"
+                        className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm transition-colors hover:bg-muted/35"
                       >
-                        <span className="flex min-w-0 items-center gap-2">
+                        <span className="flex min-w-0 flex-1 items-center gap-2.5">
                           <input
                             type="checkbox"
                             checked={checked}
                             onChange={() => toggleMember(account.instanceId)}
-                            className="size-3.5 accent-primary"
+                            className="size-3.5 shrink-0 accent-primary"
                           />
-                          <span className="truncate">{account.label}</span>
-                          <span className="truncate font-mono text-xs text-muted-foreground">
-                            {account.instanceId}
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate font-medium text-foreground">
+                              {account.label}
+                            </span>
+                            {showSubId ? (
+                              <span className="block truncate font-mono text-2xs text-muted-foreground">
+                                {account.instanceId}
+                              </span>
+                            ) : null}
                           </span>
                         </span>
-                        <Badge
-                          variant={account.status === "ready" ? "secondary" : "outline"}
-                          size="sm"
-                        >
-                          {ACCOUNT_STATUS_LABELS[account.status]
-                            ? m(ACCOUNT_STATUS_LABELS[account.status]!)
-                            : account.status}
-                        </Badge>
+                        <span className="flex shrink-0 items-center gap-1.5">
+                          {otherPoolName ? (
+                            <Badge variant="outline" size="sm">
+                              {gt("In {pool}", { pool: otherPoolName })}
+                            </Badge>
+                          ) : null}
+                          <Badge
+                            variant={account.status === "ready" ? "secondary" : "outline"}
+                            size="sm"
+                          >
+                            {ACCOUNT_STATUS_LABELS[account.status]
+                              ? m(ACCOUNT_STATUS_LABELS[account.status]!)
+                              : account.status}
+                          </Badge>
+                        </span>
                       </label>
                     );
                   })}
                 </div>
               )}
+              <p className="text-xs text-muted-foreground">
+                {gt("Same provider only. Different providers use different models.")}
+              </p>
             </div>
 
-            <div className="grid gap-2.5 pt-1">
-              <label className="flex items-center justify-between gap-3 text-sm">
-                <span>
-                  <span className="block font-medium">{gt("Auto-failover on rate limit")}</span>
-                  <span className="text-xs text-muted-foreground">
+            <div className="divide-y divide-border/50 rounded-lg border border-border/60 bg-muted/10">
+              <div className="flex items-center justify-between gap-3 px-3 py-2.5 text-sm">
+                <div className="min-w-0">
+                  <div className="font-medium text-foreground">
+                    {gt("Auto-failover on rate limit")}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
                     {gt("Switch to another healthy account and keep going.")}
-                  </span>
-                </span>
-                <Switch checked={autoFailover} onCheckedChange={setAutoFailover} />
-              </label>
+                  </div>
+                </div>
+                <Switch
+                  checked={autoFailover}
+                  aria-label={gt("Auto-failover on rate limit")}
+                  onCheckedChange={setAutoFailover}
+                />
+              </div>
 
-              <label className="flex items-center justify-between gap-3 text-sm">
-                <span>
-                  <span className="block font-medium">{gt("Keep thread on same account")}</span>
-                  <span className="text-xs text-muted-foreground">
+              <div className="flex items-center justify-between gap-3 px-3 py-2.5 text-sm">
+                <div className="min-w-0">
+                  <div className="font-medium text-foreground">
+                    {gt("Keep thread on same account")}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
                     {gt("Reuse the same account per thread until its quota runs out.")}
-                  </span>
-                </span>
-                <Switch checked={stickyThread} onCheckedChange={setStickyThread} />
-              </label>
+                  </div>
+                </div>
+                <Switch
+                  checked={stickyThread}
+                  aria-label={gt("Keep thread on same account")}
+                  onCheckedChange={setStickyThread}
+                />
+              </div>
             </div>
           </form>
         </DialogPanel>

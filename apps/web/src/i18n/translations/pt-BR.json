@@ -12860,5 +12860,8 @@
   "d66b287f60ccdeb5": "Troca automática ao atingir limite",
   "a07b362abafc5379": "Troca para outra conta disponível e continua a execução.",
   "743f77ebc2b5ddc4": "Manter a thread na mesma conta",
-  "eddf07c62c000c65": "Usa a mesma conta por thread até a cota acabar."
+  "eddf07c62c000c65": "Usa a mesma conta por thread até a cota acabar.",
+  "3f2daa063f3a817a": "Fora de pools",
+  "792ec7f67761947b": "Em {pool}",
+  "2d5db8c803b24d9a": "Apenas contas do mesmo provedor. Provedores diferentes usam modelos diferentes."
 }

@@ -12855,5 +12855,8 @@
   "d66b287f60ccdeb5": "Cambio automático al llegar al límite",
   "a07b362abafc5379": "Cambia a otra cuenta disponible y continúa la tarea.",
   "743f77ebc2b5ddc4": "Mantener el hilo en la misma cuenta",
-  "eddf07c62c000c65": "Usa la misma cuenta en cada hilo hasta que se agote su cuota."
+  "eddf07c62c000c65": "Usa la misma cuenta en cada hilo hasta que se agote su cuota.",
+  "3f2daa063f3a817a": "Sin pool",
+  "792ec7f67761947b": "En {pool}",
+  "2d5db8c803b24d9a": "Solo cuentas del mismo proveedor. Cada proveedor usa modelos distintos."
 }

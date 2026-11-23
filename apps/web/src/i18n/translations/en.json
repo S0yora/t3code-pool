@@ -12869,5 +12869,8 @@
   "d66b287f60ccdeb5": "Auto-failover on rate limit",
   "a07b362abafc5379": "Switch to another healthy account and keep going.",
   "743f77ebc2b5ddc4": "Keep thread on same account",
-  "eddf07c62c000c65": "Reuse the same account per thread until its quota runs out."
+  "eddf07c62c000c65": "Reuse the same account per thread until its quota runs out.",
+  "3f2daa063f3a817a": "Unpooled",
+  "792ec7f67761947b": "In {pool}",
+  "2d5db8c803b24d9a": "Same provider only. Different providers use different models."
 }

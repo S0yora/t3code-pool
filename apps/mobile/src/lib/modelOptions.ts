@@ -18,6 +18,7 @@ import {
   isProviderDriverKind,
   resolveProjectProviderInstanceEnabled,
 } from "@t3tools/contracts";
+import { buildPoolRepresentatives } from "@t3tools/shared/accountPool";
 import {
   buildExplicitProviderOptionSelectionsFromDescriptors,
   getProviderOptionDescriptors,
@@ -353,11 +354,22 @@ export function buildModelOptions(
         ? agentId.trim() || undefined
         : undefined;
   };
-  const badgeEntries = (config?.providers ?? []).map((provider) => ({
-    driverKind: provider.driver,
-    enabled: provider.enabled,
-    acpRegistryAgentId: registryAgentId(provider.instanceId),
-  }));
+  const poolCollapse =
+    config?.settings?.providerPools && Object.keys(config.settings.providerPools).length > 0
+      ? buildPoolRepresentatives({
+          pools: config.settings.providerPools,
+          providers: config.providers,
+          activeInstanceId: providerInstanceId ?? fallbackModelSelection?.instanceId,
+          nowMs: Date.now(),
+        })
+      : null;
+  const badgeEntries = (config?.providers ?? [])
+    .filter((provider) => !(poolCollapse?.hiddenMemberIds.has(provider.instanceId) ?? false))
+    .map((provider) => ({
+      driverKind: provider.driver,
+      enabled: provider.enabled,
+      acpRegistryAgentId: registryAgentId(provider.instanceId),
+    }));
   const providerBadgeFor = (instanceId: ModelSelection["instanceId"]) => {
     const snapshot = config?.providers.find((provider) => provider.instanceId === instanceId);
     const instance = config?.settings?.providerInstances[instanceId];
@@ -386,6 +398,9 @@ export function buildModelOptions(
   };
 
   for (const provider of config?.providers ?? []) {
+    if (poolCollapse?.hiddenMemberIds.has(provider.instanceId)) {
+      continue;
+    }
     if (
       !matchesLockedProvider(provider) ||
       isDriverDisallowed(config, provider.driver) ||
@@ -397,8 +412,13 @@ export function buildModelOptions(
       continue;
     }
 
-    const providerLabel = providerDisplayLabel(provider);
-    const providerBadge = providerBadgeFor(provider.instanceId);
+    const poolSummary = poolCollapse?.poolByMemberId.get(provider.instanceId);
+    const providerLabel = poolSummary?.pool.displayName ?? providerDisplayLabel(provider);
+    const baseBadge = providerBadgeFor(provider.instanceId);
+    const providerBadge =
+      poolSummary && baseBadge
+        ? { ...baseBadge, displayName: poolSummary.pool.displayName }
+        : baseBadge;
     const updateRequired = provider.updateRequiredModels?.length
       ? {
           driver: provider.driver,

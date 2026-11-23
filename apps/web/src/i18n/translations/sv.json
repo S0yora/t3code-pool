@@ -12867,5 +12867,8 @@
   "d66b287f60ccdeb5": "Automatisk växling vid gräns",
   "a07b362abafc5379": "Byt till ett annat fungerande konto och fortsätt.",
   "743f77ebc2b5ddc4": "Håll tråden på samma konto",
-  "eddf07c62c000c65": "Använd samma konto per tråd tills kvoten tar slut."
+  "eddf07c62c000c65": "Använd samma konto per tråd tills kvoten tar slut.",
+  "3f2daa063f3a817a": "Utanför pool",
+  "792ec7f67761947b": "I {pool}",
+  "2d5db8c803b24d9a": "Endast konton från samma leverantör. Olika leverantörer har olika modeller."
 }
