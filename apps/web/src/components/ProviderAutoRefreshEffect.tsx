@@ -61,22 +61,20 @@ function EnvironmentProviderAutoRefreshEffect(props: { readonly environmentId: E
     runningRef.current = true;
     let cancelled = false;
     void (async () => {
-      try {
-        for (const instanceId of targets) {
-          if (cancelled) break;
-          await refreshProviders({
-            environmentId,
-            input: { instanceId, refreshModels: true, reloadSecrets: true },
-          });
-        }
-      } finally {
-        runningRef.current = false;
+      for (const instanceId of targets) {
+        if (cancelled) break;
+        await refreshProviders({
+          environmentId,
+          input: { instanceId, refreshModels: true, reloadSecrets: true },
+        });
       }
-    })();
+    })().finally(() => {
+      runningRef.current = false;
+    });
     return () => {
       cancelled = true;
     };
-  }, [environmentId, pendingKey]);
+  }, [environmentId, pendingKey, refreshProviders]);
 
   return null;
 }

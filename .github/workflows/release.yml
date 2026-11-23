@@ -854,8 +854,10 @@ jobs:
           if [ ! -x "$SDKMANAGER" ]; then
             SDKMANAGER="$(find "$ANDROID_HOME" -name sdkmanager -type f 2>/dev/null | head -n 1)"
           fi
+          set +o pipefail
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           yes | "$SDKMANAGER" "cmake;3.22.1"
+          set -o pipefail
 
       - name: Cache Gradle
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
