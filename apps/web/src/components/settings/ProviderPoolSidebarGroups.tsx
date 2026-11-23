@@ -5,10 +5,12 @@ import type {
   ServerProvider,
 } from "@t3tools/contracts";
 import { useGT } from "gt-react";
-import { ChevronDownIcon, ChevronRightIcon, LayersIcon } from "lucide-react";
+import { ChevronRightIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
-import { Badge } from "../ui/badge";
+import { cn } from "../../lib/utils";
+import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 
 interface SidebarRowLike {
   readonly instanceId: ProviderInstanceId;
@@ -28,9 +30,7 @@ export function ProviderPoolSidebarGroups<TRow extends SidebarRowLike>({
   readonly renderRow: (row: TRow) => ReactNode;
 }) {
   const gt = useGT();
-  const [collapsedPools, setCollapsedPools] = useState<ReadonlySet<ProviderPoolId>>(
-    () => new Set(),
-  );
+  const [closedGroups, setClosedGroups] = useState<ReadonlySet<string>>(() => new Set());
 
   const poolEntries = Object.entries(providerPools ?? {}) as Array<
     [ProviderPoolId, ProviderPoolConfig]
@@ -84,13 +84,13 @@ export function ProviderPoolSidebarGroups<TRow extends SidebarRowLike>({
 
   const unpooledRows = rows.filter((row) => !claimedIds.has(row.instanceId));
 
-  const togglePool = (poolId: ProviderPoolId) => {
-    setCollapsedPools((previous) => {
+  const setGroupOpen = (key: string, open: boolean) => {
+    setClosedGroups((previous) => {
       const next = new Set(previous);
-      if (next.has(poolId)) {
-        next.delete(poolId);
+      if (open) {
+        next.delete(key);
       } else {
-        next.add(poolId);
+        next.add(key);
       }
       return next;
     });
@@ -99,62 +99,71 @@ export function ProviderPoolSidebarGroups<TRow extends SidebarRowLike>({
   return (
     <>
       {groups.map(({ poolId, pool, memberRows, readyCount }) => {
+        const key = `pool:${poolId}`;
         const hasSelected =
           selectedInstanceId !== null &&
           memberRows.some((row) => row.instanceId === selectedInstanceId);
-        const isCollapsed = collapsedPools.has(poolId);
-        const Chevron = isCollapsed ? ChevronRightIcon : ChevronDownIcon;
+        const open = !closedGroups.has(key);
 
         return (
-          <div key={poolId} className="bg-muted/15">
-            <button
-              type="button"
-              aria-expanded={!isCollapsed}
-              onClick={() => togglePool(poolId)}
-              className="flex w-full cursor-pointer items-center justify-between gap-2 px-3 py-2 text-left transition-colors outline-none hover:bg-muted/30 focus-visible:bg-muted/30 sm:px-3.5"
-            >
-              <span className="flex min-w-0 items-center gap-1.5">
-                <Chevron className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                <LayersIcon
-                  className={
-                    hasSelected
-                      ? "size-3.5 shrink-0 text-foreground"
-                      : "size-3.5 shrink-0 text-muted-foreground"
-                  }
-                  aria-hidden
-                />
-                <span className="truncate text-xs font-medium text-foreground">
-                  {pool.displayName}
-                </span>
+          <Collapsible
+            key={poolId}
+            open={open}
+            onOpenChange={(nextOpen) => setGroupOpen(key, nextOpen)}
+          >
+            <CollapsibleTrigger className="group flex min-h-10 w-full items-center gap-2 px-3 text-left text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-muted/25 hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-4">
+              <ChevronRightIcon
+                aria-hidden
+                className="size-3.5 shrink-0 transition-transform duration-150 group-data-panel-open:rotate-90 motion-reduce:transition-none"
+              />
+              <ProviderInstanceIcon
+                driverKind={pool.driver}
+                displayName={pool.displayName}
+                size="compact"
+              />
+              <span
+                className={cn(
+                  "min-w-0 flex-1 truncate",
+                  hasSelected || pool.enabled ? "text-foreground" : "text-muted-foreground",
+                )}
+              >
+                {pool.displayName}
               </span>
-              <span className="flex shrink-0 items-center gap-1">
-                {!pool.enabled ? (
-                  <Badge variant="outline" size="sm">
-                    {gt("Off")}
-                  </Badge>
-                ) : null}
-                <Badge variant={readyCount > 0 && pool.enabled ? "secondary" : "outline"} size="sm">
-                  {readyCount}/{memberRows.length}
-                </Badge>
+              <span className="shrink-0 tabular-nums text-muted-foreground">
+                {!pool.enabled ? `${gt("Off")} · ` : ""}
+                {readyCount}/{memberRows.length}
               </span>
-            </button>
-
-            {!isCollapsed ? (
-              <div className="ms-3 divide-y divide-border/40 border-t border-l border-border/60 bg-background/40">
+            </CollapsibleTrigger>
+            <CollapsiblePanel>
+              <div className="divide-y divide-border/50 border-t border-border/50 bg-background/35 ps-3">
                 {memberRows.map((row) => renderRow(row))}
               </div>
-            ) : null}
-          </div>
+            </CollapsiblePanel>
+          </Collapsible>
         );
       })}
 
       {unpooledRows.length > 0 ? (
-        <>
-          <div className="bg-muted/20 px-3 py-1.5 text-2xs font-medium tracking-wide text-muted-foreground uppercase sm:px-4">
-            {gt("Unpooled")}
-          </div>
-          {unpooledRows.map((row) => renderRow(row))}
-        </>
+        <Collapsible
+          open={!closedGroups.has("unpooled")}
+          onOpenChange={(nextOpen) => setGroupOpen("unpooled", nextOpen)}
+        >
+          <CollapsibleTrigger className="group flex min-h-10 w-full items-center gap-2 px-3 text-left text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-muted/25 hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-4">
+            <ChevronRightIcon
+              aria-hidden
+              className="size-3.5 shrink-0 transition-transform duration-150 group-data-panel-open:rotate-90 motion-reduce:transition-none"
+            />
+            <span className="min-w-0 flex-1 truncate">{gt("Unpooled")}</span>
+            <span className="shrink-0 tabular-nums text-muted-foreground">
+              {unpooledRows.length}
+            </span>
+          </CollapsibleTrigger>
+          <CollapsiblePanel>
+            <div className="divide-y divide-border/50 border-t border-border/50">
+              {unpooledRows.map((row) => renderRow(row))}
+            </div>
+          </CollapsiblePanel>
+        </Collapsible>
       ) : null}
     </>
   );

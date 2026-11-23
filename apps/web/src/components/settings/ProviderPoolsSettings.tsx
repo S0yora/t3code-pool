@@ -14,21 +14,21 @@ import {
   isSecretReference,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
-import { msg, useGT, useMessages } from "gt-react";
+import { msg, T, useGT, useMessages } from "gt-react";
 import {
+  ChevronRightIcon,
   CloudDownloadIcon,
   CloudUploadIcon,
-  LayersIcon,
-  PencilIcon,
   PlusIcon,
   RefreshCwIcon,
-  Trash2Icon,
   XIcon,
 } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 
 import { useUpdateEnvironmentSettings } from "../../hooks/useSettings";
+import { cn } from "../../lib/utils";
 import { useEnvironmentScope, usePreparedConnection } from "../../state/session";
+import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -38,8 +38,9 @@ import {
   AlertDialogPopup,
   AlertDialogTitle,
 } from "../ui/alert-dialog";
-import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import { CheckboxMark } from "../ui/checkbox";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import {
   Dialog,
   DialogDescription,
@@ -51,11 +52,11 @@ import {
 } from "../ui/dialog";
 import { DraftInput } from "../ui/draft-input";
 import { Input } from "../ui/input";
-import { Label } from "../ui/label";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { toastManager } from "../ui/toast";
 import { SecretInput } from "./SecretInput";
+import { SettingsGroup } from "./SettingsGroup";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 
 interface PoolStatusCooldown {
@@ -208,38 +209,38 @@ export function ProviderPoolsSettings({
   const sync = settings.providerPoolSync;
   const poolEntries = Object.entries(pools) as Array<[ProviderPoolId, ProviderPoolConfig]>;
 
-  const [editingPool, setEditingPool] = useState<{
-    readonly poolId: ProviderPoolId | null;
-  } | null>(null);
+  const tokenConfigured = isConfiguredSecret(sync.syncToken);
+  const passphraseConfigured = isConfiguredSecret(sync.syncPassphrase);
+
+  const [editingPool, setEditingPool] = useState<{ poolId: ProviderPoolId | null } | null>(null);
   const [status, setStatus] = useState<PoolStatusPayload | null>(null);
   const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
-  const [busyAction, setBusyAction] = useState<"sync" | "push" | "pull" | null>(null);
+  const [busyAction, setBusyAction] = useState<"push" | "pull" | "sync" | null>(null);
+  const [syncAdvancedOpen, setSyncAdvancedOpen] = useState(
+    () => !tokenConfigured || !passphraseConfigured,
+  );
 
   const refreshStatus = async () => {
     if (!prepared) return;
     setIsRefreshingStatus(true);
-    const res = await fetchEnvironmentPoolEndpoint<PoolStatusPayload>(
-      prepared,
-      "/api/pool-hub/status",
-      { method: "GET" },
-    );
+    const res = await fetchEnvironmentPoolEndpoint<PoolStatusPayload>(prepared, "/api/pool/status");
     setIsRefreshingStatus(false);
     if (res.ok && res.data) {
       setStatus(res.data);
     }
   };
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads initial live cooldown & lease status from the connected server
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads live pool status from the connected server HTTP endpoint
   useEffect(() => {
-    if (!prepared) return;
     let cancelled = false;
-    void fetchEnvironmentPoolEndpoint<PoolStatusPayload>(prepared, "/api/pool-hub/status", {
-      method: "GET",
-    }).then((res) => {
-      if (!cancelled && res.ok && res.data) {
-        setStatus(res.data);
-      }
-    });
+    if (!prepared) return;
+    void fetchEnvironmentPoolEndpoint<PoolStatusPayload>(prepared, "/api/pool/status").then(
+      (res) => {
+        if (!cancelled && res.ok && res.data) {
+          setStatus(res.data);
+        }
+      },
+    );
     return () => {
       cancelled = true;
     };
@@ -299,26 +300,22 @@ export function ProviderPoolsSettings({
     return [...byDriver.entries()].filter(([, ids]) => ids.length >= 2);
   })();
 
-  const runSyncAction = async (action: "sync" | "push" | "pull") => {
+  const runSyncAction = async (action: "push" | "pull" | "sync") => {
     if (!prepared || busyAction !== null) return;
     setBusyAction(action);
-    const res = await fetchEnvironmentPoolEndpoint<PoolSyncActionResponse>(
-      prepared,
-      "/api/pool-hub/sync",
-      {
-        method: "POST",
-        body: JSON.stringify({ action }),
-      },
-    );
+    const endpoint =
+      action === "push"
+        ? "/api/pool/sync/push"
+        : action === "pull"
+          ? "/api/pool/sync/pull"
+          : "/api/pool/sync/now";
+    const res = await fetchEnvironmentPoolEndpoint<PoolSyncActionResponse>(prepared, endpoint, {
+      method: "POST",
+    });
     setBusyAction(null);
-    const detail =
-      res.data?.detail ??
-      res.error ??
-      (res.ok
-        ? gt("Done.")
-        : res.status === 0
-          ? gt("Environment is not connected.")
-          : gt("Request failed (HTTP {status}).", { status: res.status }));
+    const detail = res.ok
+      ? (res.data?.detail ?? gt("Done."))
+      : (res.error ?? gt("Request failed."));
     toastManager.add({
       type: res.ok && res.data?.ok !== false ? "success" : "error",
       title:
@@ -343,8 +340,6 @@ export function ProviderPoolsSettings({
   }
 
   const activeLeases = status?.activeLeases ?? {};
-  const tokenConfigured = isConfiguredSecret(sync.syncToken);
-  const passphraseConfigured = isConfiguredSecret(sync.syncPassphrase);
 
   return (
     <>
@@ -378,15 +373,10 @@ export function ProviderPoolsSettings({
           ? quickPoolSuggestions.map(([driver, ids]) => (
               <SettingsRow
                 key={`suggest-${driver}`}
-                title={
-                  <span className="inline-flex items-center gap-2">
-                    <LayersIcon className="size-3.5 text-muted-foreground" aria-hidden />
-                    {gt("{count} {driver} accounts not in a pool", {
-                      count: ids.length,
-                      driver: driverLabel(driver),
-                    })}
-                  </span>
-                }
+                title={gt("{count} {driver} accounts not in a pool", {
+                  count: ids.length,
+                  driver: driverLabel(driver),
+                })}
                 description={gt("Combine them into one entry with automatic failover.")}
                 control={
                   <Button
@@ -452,37 +442,38 @@ export function ProviderPoolsSettings({
             const strategyEntry = POOL_STRATEGIES.find((item) => item.value === pool.strategy);
             const strategyLabel = strategyEntry ? m(strategyEntry.label) : pool.strategy;
 
+            const summaryParts = [
+              driverLabel(pool.driver),
+              !pool.enabled
+                ? gt("Off")
+                : gt("{ready}/{total} ready", {
+                    ready: readyCount,
+                    total: pool.memberInstanceIds.length,
+                  }),
+              ...(poolActiveLeases > 0 ? [gt("{count} active", { count: poolActiveLeases })] : []),
+              strategyLabel,
+              ...(pool.autoFailover ? [gt("Failover")] : []),
+              ...(pool.stickyThread ? [gt("Sticky threads")] : []),
+            ];
+
             return (
               <SettingsRow
                 key={poolId}
                 title={
-                  <span className="inline-flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-2">
+                    <ProviderInstanceIcon
+                      driverKind={pool.driver}
+                      displayName={pool.displayName}
+                      size="compact"
+                    />
                     <span>{pool.displayName}</span>
-                    <Badge variant="outline" size="sm">
-                      {driverLabel(pool.driver)}
-                    </Badge>
-                    <Badge variant={readyCount > 0 ? "secondary" : "destructive"} size="sm">
-                      {gt("{ready}/{total} ready", {
-                        ready: readyCount,
-                        total: pool.memberInstanceIds.length,
-                      })}
-                    </Badge>
-                    {poolActiveLeases > 0 ? (
-                      <Badge variant="outline" size="sm">
-                        {gt("{count} active", { count: poolActiveLeases })}
-                      </Badge>
-                    ) : null}
                   </span>
                 }
                 description={
-                  <span className="flex flex-col gap-1">
-                    <span>
-                      {strategyLabel}
-                      {pool.autoFailover ? ` · ${gt("Failover")}` : ""}
-                      {pool.stickyThread ? ` · ${gt("Sticky threads")}` : ""}
-                    </span>
-                    {cooldownMembers.length > 0 ? (
-                      <span className="text-xs text-warning-foreground">
+                  cooldownMembers.length > 0 ? (
+                    <span className="flex flex-col gap-0.5">
+                      <span>{summaryParts.join(" · ")}</span>
+                      <span className="text-warning-foreground">
                         {gt("Cooldown: {details}", {
                           details: cooldownMembers
                             .map(
@@ -492,39 +483,34 @@ export function ProviderPoolsSettings({
                             .join(", "),
                         })}
                       </span>
-                    ) : null}
-                  </span>
+                    </span>
+                  ) : (
+                    summaryParts.join(" · ")
+                  )
                 }
                 control={
-                  <div className="flex items-center gap-1.5">
-                    {editable ? (
-                      <>
-                        <Switch
-                          checked={pool.enabled}
-                          aria-label={gt("Enable {name}", { name: pool.displayName })}
-                          onCheckedChange={(checked) =>
-                            updateSettings({
-                              providerPools: {
-                                [poolId]: { ...pool, enabled: checked },
-                              },
-                            })
-                          }
-                        />
-                        <Button
-                          size="icon-xs"
-                          variant="ghost"
-                          aria-label={gt("Edit {name}", { name: pool.displayName })}
-                          onClick={() => setEditingPool({ poolId })}
-                        >
-                          <PencilIcon className="size-3.5" aria-hidden />
-                        </Button>
-                        <RemovePoolButton
-                          label={pool.displayName}
-                          onConfirm={() => updateSettings({ providerPools: { [poolId]: null } })}
-                        />
-                      </>
-                    ) : null}
-                  </div>
+                  editable ? (
+                    <div className="flex items-center gap-1.5">
+                      <Switch
+                        checked={pool.enabled}
+                        aria-label={gt("Enable {name}", { name: pool.displayName })}
+                        onCheckedChange={(checked) =>
+                          updateSettings({
+                            providerPools: {
+                              [poolId]: { ...pool, enabled: checked },
+                            },
+                          })
+                        }
+                      />
+                      <Button size="xs" variant="ghost" onClick={() => setEditingPool({ poolId })}>
+                        {gt("Edit")}
+                      </Button>
+                      <RemovePoolButton
+                        label={pool.displayName}
+                        onConfirm={() => updateSettings({ providerPools: { [poolId]: null } })}
+                      />
+                    </div>
+                  ) : null
                 }
               />
             );
@@ -543,9 +529,12 @@ export function ProviderPoolsSettings({
             <Switch
               checked={sync.enabled}
               disabled={!editable}
-              onCheckedChange={(checked) =>
-                updateSettings({ providerPoolSync: { enabled: checked } })
-              }
+              onCheckedChange={(checked) => {
+                updateSettings({ providerPoolSync: { enabled: checked } });
+                if (checked && (!tokenConfigured || !passphraseConfigured)) {
+                  setSyncAdvancedOpen(true);
+                }
+              }}
             />
           }
         />
@@ -571,7 +560,7 @@ export function ProviderPoolsSettings({
                     }
                   }}
                 >
-                  <SelectTrigger className="w-40" size="sm" aria-label={gt("Role")}>
+                  <SelectTrigger size="sm" aria-label={gt("Role")}>
                     <SelectValue>
                       {sync.mode === "hub" ? gt("Hub (server)") : gt("Client")}
                     </SelectValue>
@@ -591,7 +580,7 @@ export function ProviderPoolsSettings({
                 control={
                   <DraftInput
                     size="sm"
-                    className="w-64"
+                    className="w-60 sm:w-64"
                     disabled={!editable}
                     placeholder="https://my-server.ts.net:3773"
                     value={sync.hubUrl}
@@ -602,78 +591,6 @@ export function ProviderPoolsSettings({
                 }
               />
             ) : null}
-
-            <SettingsRow
-              title={gt("Sync token")}
-              description={gt("Shared token for Hub API access.")}
-              control={
-                <div className="flex items-center gap-1.5">
-                  <SecretInput
-                    size="sm"
-                    className="w-56"
-                    disabled={!editable}
-                    configured={tokenConfigured}
-                    value=""
-                    onCommit={(next) => updateSettings({ providerPoolSync: { syncToken: next } })}
-                  />
-                  {editable && tokenConfigured ? (
-                    <Button
-                      size="icon-xs"
-                      variant="ghost"
-                      aria-label={gt("Clear sync token")}
-                      onClick={() => updateSettings({ providerPoolSync: { syncToken: "" } })}
-                    >
-                      <XIcon className="size-3.5" aria-hidden />
-                    </Button>
-                  ) : null}
-                </div>
-              }
-            />
-
-            <SettingsRow
-              title={gt("Vault passphrase")}
-              description={gt(
-                "Encrypts account bundles locally (AES-256-GCM). Never sent to the server.",
-              )}
-              control={
-                <div className="flex items-center gap-1.5">
-                  <SecretInput
-                    size="sm"
-                    className="w-56"
-                    disabled={!editable}
-                    configured={passphraseConfigured}
-                    value=""
-                    onCommit={(next) =>
-                      updateSettings({ providerPoolSync: { syncPassphrase: next } })
-                    }
-                  />
-                  {editable && passphraseConfigured ? (
-                    <Button
-                      size="icon-xs"
-                      variant="ghost"
-                      aria-label={gt("Clear vault passphrase")}
-                      onClick={() => updateSettings({ providerPoolSync: { syncPassphrase: "" } })}
-                    >
-                      <XIcon className="size-3.5" aria-hidden />
-                    </Button>
-                  ) : null}
-                </div>
-              }
-            />
-
-            <SettingsRow
-              title={gt("Include account tokens")}
-              description={gt("Sync saved provider tokens along with pool settings.")}
-              control={
-                <Switch
-                  checked={sync.syncCredentials}
-                  disabled={!editable}
-                  onCheckedChange={(checked) =>
-                    updateSettings({ providerPoolSync: { syncCredentials: checked } })
-                  }
-                />
-              }
-            />
 
             <SettingsRow
               title={gt("Vault actions")}
@@ -724,6 +641,95 @@ export function ProviderPoolsSettings({
                 </div>
               }
             />
+
+            <Collapsible open={syncAdvancedOpen} onOpenChange={setSyncAdvancedOpen}>
+              <CollapsibleTrigger className="group flex min-h-10 w-full items-center gap-1.5 rounded-b-xl px-3 text-left text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-panel-open:rounded-none sm:px-4">
+                <ChevronRightIcon
+                  aria-hidden
+                  className="size-3.5 shrink-0 transition-transform duration-150 group-data-panel-open:rotate-90 motion-reduce:transition-none"
+                />
+                <T>Advanced</T>
+              </CollapsibleTrigger>
+              <CollapsiblePanel>
+                <div className="border-t border-border/50 *:not-first:border-t *:not-first:border-border/50">
+                  <SettingsRow
+                    title={gt("Sync token")}
+                    description={gt("Shared token for Hub API access.")}
+                    control={
+                      <div className="flex items-center gap-1.5">
+                        <SecretInput
+                          size="sm"
+                          className="w-52 sm:w-56"
+                          disabled={!editable}
+                          configured={tokenConfigured}
+                          value=""
+                          onCommit={(next) =>
+                            updateSettings({ providerPoolSync: { syncToken: next } })
+                          }
+                        />
+                        {editable && tokenConfigured ? (
+                          <Button
+                            size="icon-xs"
+                            variant="ghost"
+                            aria-label={gt("Clear sync token")}
+                            onClick={() => updateSettings({ providerPoolSync: { syncToken: "" } })}
+                          >
+                            <XIcon className="size-3.5" aria-hidden />
+                          </Button>
+                        ) : null}
+                      </div>
+                    }
+                  />
+
+                  <SettingsRow
+                    title={gt("Vault passphrase")}
+                    description={gt(
+                      "Encrypts synced accounts with AES-256-GCM. Use the same passphrase on every device.",
+                    )}
+                    control={
+                      <div className="flex items-center gap-1.5">
+                        <SecretInput
+                          size="sm"
+                          className="w-52 sm:w-56"
+                          disabled={!editable}
+                          configured={passphraseConfigured}
+                          value=""
+                          onCommit={(next) =>
+                            updateSettings({ providerPoolSync: { syncPassphrase: next } })
+                          }
+                        />
+                        {editable && passphraseConfigured ? (
+                          <Button
+                            size="icon-xs"
+                            variant="ghost"
+                            aria-label={gt("Clear vault passphrase")}
+                            onClick={() =>
+                              updateSettings({ providerPoolSync: { syncPassphrase: "" } })
+                            }
+                          >
+                            <XIcon className="size-3.5" aria-hidden />
+                          </Button>
+                        ) : null}
+                      </div>
+                    }
+                  />
+
+                  <SettingsRow
+                    title={gt("Include account tokens")}
+                    description={gt("Sync saved provider tokens along with pool settings.")}
+                    control={
+                      <Switch
+                        checked={sync.syncCredentials}
+                        disabled={!editable}
+                        onCheckedChange={(checked) =>
+                          updateSettings({ providerPoolSync: { syncCredentials: checked } })
+                        }
+                      />
+                    }
+                  />
+                </div>
+              </CollapsiblePanel>
+            </Collapsible>
           </>
         ) : null}
       </SettingsSection>
@@ -759,13 +765,8 @@ function RemovePoolButton({
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button
-        size="icon-xs"
-        variant="ghost"
-        onClick={() => setOpen(true)}
-        aria-label={gt("Remove pool {name}", { name: label })}
-      >
-        <Trash2Icon className="size-3.5" aria-hidden />
+      <Button size="xs" variant="ghost" onClick={() => setOpen(true)}>
+        {gt("Remove")}
       </Button>
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogPopup>
@@ -881,7 +882,7 @@ function PoolEditorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogPopup className="max-w-lg">
+      <DialogPopup className="max-w-xl">
         <DialogHeader>
           <DialogTitle>{existingPool ? gt("Edit pool") : gt("New pool")}</DialogTitle>
           <DialogDescription>
@@ -891,7 +892,7 @@ function PoolEditorDialog({
         <DialogPanel>
           <form
             id={formId}
-            className="grid gap-4"
+            className="space-y-4"
             onSubmit={(event) => {
               event.preventDefault();
               if (!canSave) return;
@@ -908,80 +909,103 @@ function PoolEditorDialog({
               });
             }}
           >
-            <div className="grid gap-1.5">
-              <Label htmlFor="pool-display-name">{gt("Pool name")}</Label>
-              <Input
-                id="pool-display-name"
-                value={displayName}
-                onChange={(event) => setDisplayName(event.target.value)}
-                placeholder={gt("e.g. Antigravity Pool")}
-                autoFocus
+            <SettingsGroup>
+              <SettingsRow
+                title={gt("Pool name")}
+                control={
+                  <Input
+                    value={displayName}
+                    onChange={(event) => setDisplayName(event.target.value)}
+                    placeholder={gt("e.g. Antigravity Pool")}
+                    className="w-52 sm:w-60"
+                    autoFocus
+                  />
+                }
               />
-            </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="grid gap-1.5">
-                <Label>{gt("Provider")}</Label>
-                <Select
-                  value={driver}
-                  onValueChange={(next) => {
-                    if (!next) return;
-                    const nextDriver = next as ProviderDriverKind;
-                    const prevDefaultName = `${driverLabel(driver)} Pool`;
-                    setDriver(nextDriver);
-                    if (!displayName.trim() || displayName.trim() === prevDefaultName) {
-                      setDisplayName(`${driverLabel(nextDriver)} Pool`);
-                    }
-                    const nextAccounts = allAccounts.filter((a) => a.driver === nextDriver);
-                    const enabledIds = nextAccounts
-                      .filter((a) => a.enabled)
-                      .map((a) => a.instanceId);
-                    setSelectedMembers(
-                      enabledIds.length > 0 ? enabledIds : nextAccounts.map((a) => a.instanceId),
-                    );
-                  }}
-                >
-                  <SelectTrigger size="sm" className="w-full" aria-label={gt("Provider")}>
-                    <SelectValue>{driverLabel(driver)}</SelectValue>
-                  </SelectTrigger>
-                  <SelectPopup align="start" alignItemWithTrigger={false}>
-                    {availableDrivers.map((item) => {
-                      const count = accountCountByDriver.get(item) ?? 0;
-                      return (
-                        <SelectItem key={item} value={item}>
-                          {count > 0 ? `${driverLabel(item)} (${count})` : driverLabel(item)}
-                        </SelectItem>
+              <SettingsRow
+                title={gt("Provider")}
+                description={gt("Same provider only. Different providers use different models.")}
+                control={
+                  <Select
+                    value={driver}
+                    onValueChange={(next) => {
+                      if (!next) return;
+                      const nextDriver = next as ProviderDriverKind;
+                      const prevDefaultName = `${driverLabel(driver)} Pool`;
+                      setDriver(nextDriver);
+                      if (!displayName.trim() || displayName.trim() === prevDefaultName) {
+                        setDisplayName(`${driverLabel(nextDriver)} Pool`);
+                      }
+                      const nextAccounts = allAccounts.filter((a) => a.driver === nextDriver);
+                      const enabledIds = nextAccounts
+                        .filter((a) => a.enabled)
+                        .map((a) => a.instanceId);
+                      setSelectedMembers(
+                        enabledIds.length > 0 ? enabledIds : nextAccounts.map((a) => a.instanceId),
                       );
-                    })}
-                  </SelectPopup>
-                </Select>
-              </div>
+                    }}
+                  >
+                    <SelectTrigger size="sm" aria-label={gt("Provider")}>
+                      <SelectValue>{driverLabel(driver)}</SelectValue>
+                    </SelectTrigger>
+                    <SelectPopup align="end" alignItemWithTrigger={false}>
+                      {availableDrivers.map((item) => {
+                        const count = accountCountByDriver.get(item) ?? 0;
+                        return (
+                          <SelectItem key={item} value={item}>
+                            {count > 0 ? `${driverLabel(item)} (${count})` : driverLabel(item)}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectPopup>
+                  </Select>
+                }
+              />
 
-              <div className="grid gap-1.5">
-                <Label>{gt("Routing")}</Label>
-                <Select
-                  value={strategy}
-                  onValueChange={(next) => {
-                    if (next) setStrategy(next as ProviderPoolStrategy);
-                  }}
-                >
-                  <SelectTrigger size="sm" className="w-full" aria-label={gt("Routing")}>
-                    <SelectValue>{selectedStrategyLabel}</SelectValue>
-                  </SelectTrigger>
-                  <SelectPopup align="start" alignItemWithTrigger={false}>
-                    {POOL_STRATEGIES.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        {m(item.label)}
-                      </SelectItem>
-                    ))}
-                  </SelectPopup>
-                </Select>
-              </div>
-            </div>
+              <SettingsRow
+                title={gt("Routing")}
+                control={
+                  <Select
+                    value={strategy}
+                    onValueChange={(next) => {
+                      if (next) setStrategy(next as ProviderPoolStrategy);
+                    }}
+                  >
+                    <SelectTrigger size="sm" aria-label={gt("Routing")}>
+                      <SelectValue>{selectedStrategyLabel}</SelectValue>
+                    </SelectTrigger>
+                    <SelectPopup align="end" alignItemWithTrigger={false}>
+                      {POOL_STRATEGIES.map((item) => (
+                        <SelectItem key={item.value} value={item.value}>
+                          {m(item.label)}
+                        </SelectItem>
+                      ))}
+                    </SelectPopup>
+                  </Select>
+                }
+              />
 
-            <div className="grid gap-2">
-              <div className="flex items-center justify-between gap-2">
-                <Label>{gt("Accounts ({count})", { count: selectedMembers.length })}</Label>
+              <SettingsRow
+                title={gt("Auto-failover")}
+                description={gt("Try the next account automatically when one hits a rate limit.")}
+                control={<Switch checked={autoFailover} onCheckedChange={setAutoFailover} />}
+              />
+
+              <SettingsRow
+                title={gt("Keep thread on same account")}
+                description={gt(
+                  "Reuse the same account inside a thread unless it hits a limit or fails.",
+                )}
+                control={<Switch checked={stickyThread} onCheckedChange={setStickyThread} />}
+              />
+            </SettingsGroup>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2 px-1">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {gt("Accounts ({count})", { count: selectedMembers.length })}
+                </span>
                 {driverAccounts.length > 0 ? (
                   <Button
                     type="button"
@@ -1003,29 +1027,38 @@ function PoolEditorDialog({
               </div>
 
               {driverAccounts.length === 0 ? (
-                <p className="rounded-lg border border-dashed border-border/70 px-3 py-4 text-center text-xs text-muted-foreground">
-                  {gt("No accounts for this provider yet.")}
-                </p>
+                <SettingsGroup>
+                  <SettingsRow title={gt("No accounts for this provider yet.")} />
+                </SettingsGroup>
               ) : (
-                <div className="max-h-52 divide-y divide-border/40 overflow-y-auto rounded-lg border border-border/70">
+                <SettingsGroup className="max-h-56 overflow-y-auto">
                   {driverAccounts.map((account) => {
                     const checked = selectedMembers.includes(account.instanceId);
                     const otherPoolName = otherPoolByMember.get(account.instanceId);
+                    const statusKey = !account.enabled ? "disabled" : account.status;
+                    const statusMsg = ACCOUNT_STATUS_LABELS[statusKey];
+                    const statusText = statusMsg ? m(statusMsg) : statusKey;
                     const showSubId =
                       account.label.trim().toLowerCase() !==
                       String(account.instanceId).trim().toLowerCase();
+                    const meta = otherPoolName
+                      ? `${statusText} · ${gt("In {pool}", { pool: otherPoolName })}`
+                      : statusText;
+
                     return (
-                      <label
+                      <button
                         key={account.instanceId}
-                        className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm transition-colors hover:bg-muted/35"
+                        type="button"
+                        role="checkbox"
+                        aria-checked={checked}
+                        onClick={() => toggleMember(account.instanceId)}
+                        className={cn(
+                          "flex w-full cursor-pointer items-center justify-between gap-3 px-3 py-2.5 text-left text-sm transition-colors outline-none hover:bg-muted/25 focus-visible:bg-muted/25 sm:px-4",
+                          !account.enabled && "opacity-65",
+                        )}
                       >
                         <span className="flex min-w-0 flex-1 items-center gap-2.5">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleMember(account.instanceId)}
-                            className="size-3.5 shrink-0 accent-primary"
-                          />
+                          <CheckboxMark checked={checked} />
                           <span className="min-w-0 flex-1">
                             <span className="block truncate font-medium text-foreground">
                               {account.label}
@@ -1037,72 +1070,21 @@ function PoolEditorDialog({
                             ) : null}
                           </span>
                         </span>
-                        <span className="flex shrink-0 items-center gap-1.5">
-                          {otherPoolName ? (
-                            <Badge variant="outline" size="sm">
-                              {gt("In {pool}", { pool: otherPoolName })}
-                            </Badge>
-                          ) : null}
-                          <Badge
-                            variant={account.status === "ready" ? "secondary" : "outline"}
-                            size="sm"
-                          >
-                            {ACCOUNT_STATUS_LABELS[account.status]
-                              ? m(ACCOUNT_STATUS_LABELS[account.status]!)
-                              : account.status}
-                          </Badge>
-                        </span>
-                      </label>
+                        <span className="shrink-0 text-xs text-muted-foreground">{meta}</span>
+                      </button>
                     );
                   })}
-                </div>
+                </SettingsGroup>
               )}
-              <p className="text-xs text-muted-foreground">
-                {gt("Same provider only. Different providers use different models.")}
-              </p>
-            </div>
-
-            <div className="divide-y divide-border/50 rounded-lg border border-border/60 bg-muted/10">
-              <div className="flex items-center justify-between gap-3 px-3 py-2.5 text-sm">
-                <div className="min-w-0">
-                  <div className="font-medium text-foreground">
-                    {gt("Auto-failover on rate limit")}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {gt("Switch to another healthy account and keep going.")}
-                  </div>
-                </div>
-                <Switch
-                  checked={autoFailover}
-                  aria-label={gt("Auto-failover on rate limit")}
-                  onCheckedChange={setAutoFailover}
-                />
-              </div>
-
-              <div className="flex items-center justify-between gap-3 px-3 py-2.5 text-sm">
-                <div className="min-w-0">
-                  <div className="font-medium text-foreground">
-                    {gt("Keep thread on same account")}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {gt("Reuse the same account per thread until its quota runs out.")}
-                  </div>
-                </div>
-                <Switch
-                  checked={stickyThread}
-                  aria-label={gt("Keep thread on same account")}
-                  onCheckedChange={setStickyThread}
-                />
-              </div>
             </div>
           </form>
         </DialogPanel>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
             {gt("Cancel")}
           </Button>
           <Button type="submit" form={formId} disabled={!canSave}>
-            {existingPool ? gt("Save") : gt("Create pool")}
+            {existingPool ? gt("Save changes") : gt("Create pool")}
           </Button>
         </DialogFooter>
       </DialogPopup>
