@@ -6,8 +6,8 @@ import {
   ProviderPoolId,
   RunId,
   ThreadId,
-  type OrchestrationV2Command,
   type OrchestrationV2DomainEvent,
+  type OrchestrationV2ServerCommand,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -24,7 +24,7 @@ describe("ProviderPoolFailoverWorker", () => {
   it.effect("dispatches manualContinuationOfRunId onto the next pool member on usage_limit", () =>
     Effect.gen(function* () {
       const events = yield* Queue.unbounded<OrchestrationV2DomainEvent>();
-      const dispatched = yield* Queue.unbounded<OrchestrationV2Command>();
+      const dispatched = yield* Queue.unbounded<OrchestrationV2ServerCommand>();
       const recordedLimits = yield* Queue.unbounded<{
         readonly instanceId: ProviderInstanceId;
         readonly resetAt?: string | null | undefined;
