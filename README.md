@@ -5,10 +5,28 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/S0yora/t3code-pool/releases"><strong>Releases</strong></a> |
+  <a href="https://github.com/S0yora/t3code-pool/releases/latest">
+    <img src="https://img.shields.io/github/v/release/S0yora/t3code-pool?label=Release&color=24292F&logo=github&logoColor=white" alt="Latest release" />
+  </a>
+  <a href="https://github.com/S0yora/t3code-pool/releases/download/v0.1.11/T3-Code-0.1.11-x64.exe">
+    <img src="https://custom-icon-badges.demolab.com/badge/Windows-0078D6?logo=windows11&logoColor=white" alt="Download for Windows" />
+  </a>
+  <a href="https://github.com/S0yora/t3code-pool/releases/download/v0.1.11/T3-Code-0.1.11-arm64.dmg">
+    <img src="https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=F0F0F0" alt="Download for macOS" />
+  </a>
+  <a href="https://github.com/S0yora/t3code-pool/releases/download/v0.1.11/T3-Code-x86_64.AppImage">
+    <img src="https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black" alt="Download for Linux" />
+  </a>
+  <a href="https://github.com/S0yora/t3code-pool/releases/download/v0.1.11/T3-Code-0.1.11-android-arm64-v8a.apk">
+    <img src="https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white" alt="Download for Android" />
+  </a>
+</p>
+
+<p align="center">
   <a href="#how-it-works">How it works</a> |
   <a href="#device-sync">Device sync</a> |
   <a href="#install">Install</a> |
+  <a href="#quick-setup">Quick setup</a> |
   <a href="./POOL.md">Technical notes</a>
 </p>
 
@@ -30,7 +48,7 @@ T3 Code Pool groups accounts of the same provider into one pool. You pick one mo
 
 Each pool sits in front of two or more accounts of the same provider (Codex, Antigravity, Claude, and others).
 
-- **Routing strategy.** Choose how new threads pick an account: **Least used**, **Round robin**, or **Priority**.
+- **Routing strategy.** Choose how new threads pick an account: **Least used**, **Earliest reset**, **Round robin**, or **Priority**.
 - **Sticky threads.** A thread stays on the same account across turns so session state and context do not reset.
 - **Auto-failover.** When an account hits a rate limit or quota error, it goes on cooldown and the turn automatically switches to the next ready account.
 - **Clean picker.** Pooled accounts stay grouped in Settings and appear as a single entry in the chat model picker across desktop, web, and mobile.
@@ -53,15 +71,16 @@ If you run T3 Code on more than one machine, set one server (such as a Linux VM 
 
 ## Install
 
-Download builds from [GitHub Releases](https://github.com/S0yora/t3code-pool/releases):
+Download `v0.1.11` directly or browse all files (including [`SHA256SUMS`](https://github.com/S0yora/t3code-pool/releases/download/v0.1.11/SHA256SUMS)) on [GitHub Releases](https://github.com/S0yora/t3code-pool/releases/latest):
 
-| Platform  | Available builds                                        |
-| --------- | ------------------------------------------------------- |
-| Windows   | `.exe` installer                                        |
-| macOS     | `.dmg` (Apple Silicon and Intel)                        |
-| Linux     | `.AppImage`, `.deb`, and standalone `t3` server binary  |
-| Android   | Signed `T3-Code-*-android-arm64-v8a.apk`                |
-| Web / iOS | Open your T3 Code server URL in a browser or iOS Safari |
+| Platform                                                                                                | Downloads (`v0.1.11`)                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ![Windows](https://custom-icon-badges.demolab.com/badge/Windows-0078D6?logo=windows11&logoColor=white)  | [Installer x64 (.exe)](https://github.com/S0yora/t3code-pool/releases/download/v0.1.11/T3-Code-0.1.11-x64.exe) · [Installer arm64 (.exe)](https://github.com/S0yora/t3code-pool/releases/download/v0.1.11/T3-Code-0.1.11-arm64.exe) · [CLI x64 (.zip)](https://github.com/S0yora/t3code-pool/releases/download/v0.1.11/t3-0.1.11-win32-x64.zip) · [CLI arm64 (.zip)](https://github.com/S0yora/t3code-pool/releases/download/v0.1.11/t3-0.1.11-win32-arm64.zip) |
+| ![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=F0F0F0)                         | [Apple Silicon (.dmg)](https://github.com/S0yora/t3code-pool/releases/download/v0.1.11/T3-Code-0.1.11-arm64.dmg) · [Intel (.dmg)](https://github.com/S0yora/t3code-pool/releases/download/v0.1.11/T3-Code-0.1.11-x64.dmg) · [CLI arm64 (.tar.gz)](https://github.com/S0yora/t3code-pool/releases/download/v0.1.11/t3-0.1.11-darwin-arm64.tar.gz)                                                                                                                |
+| ![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black)                          | [AppImage x64](https://github.com/S0yora/t3code-pool/releases/download/v0.1.11/T3-Code-x86_64.AppImage) · [AppImage arm64](https://github.com/S0yora/t3code-pool/releases/download/v0.1.11/T3-Code-arm64.AppImage) · [CLI x64 (.tar.gz)](https://github.com/S0yora/t3code-pool/releases/download/v0.1.11/t3-0.1.11-linux-x64.tar.gz) · [CLI arm64 (.tar.gz)](https://github.com/S0yora/t3code-pool/releases/download/v0.1.11/t3-0.1.11-linux-arm64.tar.gz)      |
+| ![Debian / Ubuntu](https://img.shields.io/badge/Debian%20%2F%20Ubuntu-A81D33?logo=debian&logoColor=fff) | [amd64 (.deb)](https://github.com/S0yora/t3code-pool/releases/download/v0.1.11/T3-Code-0.1.11-amd64.deb) · [arm64 (.deb)](https://github.com/S0yora/t3code-pool/releases/download/v0.1.11/T3-Code-0.1.11-arm64.deb)                                                                                                                                                                                                                                             |
+| ![Android](https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white)                    | [Signed APK (arm64-v8a)](https://github.com/S0yora/t3code-pool/releases/download/v0.1.11/T3-Code-0.1.11-android-arm64-v8a.apk)                                                                                                                                                                                                                                                                                                                                  |
+| Web / iOS                                                                                               | Open your T3 Code server URL in a browser or iOS Safari                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 ## Quick setup
 
