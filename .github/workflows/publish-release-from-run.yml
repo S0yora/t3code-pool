@@ -48,7 +48,7 @@ jobs:
           for pattern in "desktop-*" "cli-*" "android-apk"; do
             gh run download "$RUN_ID" -R "$GH_REPO" --pattern "$pattern" -D release-assets-dl || true
           done
-          find release-assets-dl -type f -exec mv -f -t release-assets {} +
+          find release-assets-dl -type f ! -name 'builder-debug*' -exec mv -f -t release-assets {} +
           ls -lh release-assets
 
       - name: Merge available updater manifests
