@@ -148,18 +148,19 @@ export const dispatchCommand = Effect.fn("ThreadMessageIntake.dispatchCommand")(
     ) {
       return rawCommand;
     }
-    const targetSelection =
-      rawCommand.modelSelection ??
-      (yield* (yield* ThreadManagement.ThreadManagementService)
-        .getThreadShell(rawCommand.threadId)
-        .pipe(
-          Effect.map((shell) => shell?.modelSelection),
-          Effect.orElseSucceed(() => undefined),
-        ));
+    const threadShell = yield* (yield* ThreadManagement.ThreadManagementService)
+      .getThreadShell(rawCommand.threadId)
+      .pipe(Effect.orElseSucceed(() => null));
+    const targetSelection = rawCommand.modelSelection ?? threadShell?.modelSelection;
     if (targetSelection === undefined) return rawCommand;
+    const preferredInstanceId =
+      threadShell !== null && threadShell.latestRunId !== null
+        ? threadShell.modelSelection.instanceId
+        : undefined;
     const resolved = yield* poolServiceOption.value.resolveModelSelection({
       modelSelection: targetSelection,
       threadId: rawCommand.threadId,
+      preferredInstanceId,
     });
     if (!resolved.switched && rawCommand.modelSelection === undefined) return rawCommand;
     return { ...rawCommand, modelSelection: resolved.modelSelection };

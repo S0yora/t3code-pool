@@ -2,12 +2,16 @@
 import * as NodeFSP from "node:fs/promises";
 
 import type { AntigravityAuthMethod, ProviderInstanceId } from "@t3tools/contracts";
+import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveNodeExecutable, nodeRuntimeUnavailableMessage } from "@t3tools/shared/nodeRuntime";
+import * as Clock from "effect/Clock";
+import * as DateTime from "effect/DateTime";
 import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as FileSystem from "effect/FileSystem";
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import type * as PlatformError from "effect/PlatformError";
@@ -542,6 +546,153 @@ export const prepareAntigravityProfile = Effect.fn("prepareAntigravityProfile")(
   }
   return profile;
 });
+
+const LegacyTokenFile = Schema.Struct({
+  client_id: Schema.NonEmptyString,
+  client_secret: Schema.NonEmptyString,
+  refresh_token: Schema.NonEmptyString,
+  token_uri: Schema.optional(Schema.String),
+});
+const LegacyTokenRefreshResponse = Schema.Struct({
+  access_token: Schema.NonEmptyString,
+  expires_in: Schema.Number.check(Schema.isGreaterThan(0)),
+  token_type: Schema.optional(Schema.String),
+});
+const LegacyUserInfoResponse = Schema.Struct({
+  email: Schema.optional(Schema.String),
+});
+const CliOAuthTokenFile = Schema.Struct({
+  token: Schema.Struct({
+    access_token: Schema.String,
+    token_type: Schema.String,
+    refresh_token: Schema.String,
+    expiry: Schema.String,
+    expires_in: Schema.Number,
+  }),
+  auth_method: Schema.String,
+  id_token_email: Schema.String,
+});
+const AcpAuthStateFile = Schema.Struct({
+  methodId: Schema.String,
+});
+const decodeLegacyTokenFile = Schema.decodeEffect(Schema.fromJsonString(LegacyTokenFile));
+const decodeLegacyTokenRefresh = Schema.decodeUnknownEffect(LegacyTokenRefreshResponse);
+const decodeLegacyUserInfo = Schema.decodeUnknownEffect(LegacyUserInfoResponse);
+const encodeCliOAuthTokenFile = Schema.encodeSync(Schema.fromJsonString(CliOAuthTokenFile));
+const encodeAcpAuthStateFile = Schema.encodeSync(Schema.fromJsonString(AcpAuthStateFile));
+const MANUAL_REDIRECT: RequestInit = { redirect: "manual" };
+
+/**
+ * Migrates a legacy 1.4.x `acp_token.json` into the 1.5.x CLI's `antigravity-oauth-token`
+ * and `cache/acp-auth-state.json` so existing Google sign-ins carry over without manual re-login.
+ * Keeps `acp_token.json` intact so usage limit probing can continue refreshing tokens.
+ */
+export const migrateLegacyAntigravityToken = Effect.fn("migrateLegacyAntigravityToken")(
+  function* (input: {
+    readonly acpDirectory: string;
+    readonly authMethod: AntigravityAuthMethod;
+    readonly platform?: NodeJS.Platform;
+  }): Effect.fn.Return<boolean, never, FileSystem.FileSystem | Path.Path | HttpClient.HttpClient> {
+    if (input.authMethod !== "oauth-personal") return false;
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const client = (yield* HttpClient.HttpClient).pipe(HttpClient.filterStatusOk);
+    const platform = input.platform ?? (yield* HostProcess.Platform);
+    const legacyTokenPath = path.join(input.acpDirectory, "acp_token.json");
+    const cliTokenPath = path.join(input.acpDirectory, "antigravity-oauth-token");
+    const authStatePath = path.join(input.acpDirectory, "cache", "acp-auth-state.json");
+
+    return yield* Effect.gen(function* () {
+      if (yield* fs.exists(cliTokenPath)) return false;
+      if (!(yield* fs.exists(legacyTokenPath))) return false;
+
+      const legacy = yield* fs
+        .readFileString(legacyTokenPath)
+        .pipe(Effect.flatMap(decodeLegacyTokenFile));
+      const tokenUrl = legacy.token_uri?.trim() || "https://oauth2.googleapis.com/token";
+      const parsedTokenUrl = URL.parse(tokenUrl);
+      if (
+        parsedTokenUrl === null ||
+        parsedTokenUrl.protocol !== "https:" ||
+        parsedTokenUrl.hostname !== "oauth2.googleapis.com"
+      ) {
+        return false;
+      }
+
+      const refreshed = yield* client
+        .execute(
+          HttpClientRequest.post(tokenUrl).pipe(
+            HttpClientRequest.bodyUrlParams({
+              client_id: legacy.client_id,
+              client_secret: legacy.client_secret,
+              refresh_token: legacy.refresh_token,
+              grant_type: "refresh_token",
+            }),
+          ),
+        )
+        .pipe(
+          Effect.provideService(FetchHttpClient.RequestInit, MANUAL_REDIRECT),
+          Effect.flatMap(HttpClientResponse.filterStatusOk),
+          Effect.flatMap((response) => response.json),
+          Effect.timeout("10 seconds"),
+          Effect.flatMap(decodeLegacyTokenRefresh),
+        );
+
+      const email = yield* client
+        .execute(
+          HttpClientRequest.get("https://www.googleapis.com/oauth2/v2/userinfo").pipe(
+            HttpClientRequest.setHeaders({
+              Authorization: `Bearer ${refreshed.access_token}`,
+            }),
+          ),
+        )
+        .pipe(
+          Effect.provideService(FetchHttpClient.RequestInit, MANUAL_REDIRECT),
+          Effect.flatMap(HttpClientResponse.filterStatusOk),
+          Effect.flatMap((response) => response.json),
+          Effect.timeout("10 seconds"),
+          Effect.flatMap(decodeLegacyUserInfo),
+          Effect.map((info) => info.email ?? ""),
+          Effect.orElseSucceed(() => ""),
+        );
+
+      const nowMs = yield* Clock.currentTimeMillis;
+      const expiresIn = Math.floor(refreshed.expires_in);
+      const expiry = DateTime.formatIso(DateTime.makeUnsafe(nowMs + expiresIn * 1000));
+      const cliTokenPayload = encodeCliOAuthTokenFile({
+        token: {
+          access_token: refreshed.access_token,
+          token_type: refreshed.token_type ?? "Bearer",
+          refresh_token: legacy.refresh_token,
+          expiry,
+          expires_in: expiresIn,
+        },
+        auth_method: "consumer",
+        id_token_email: email,
+      });
+
+      yield* writeFileStringAtomically({
+        filePath: cliTokenPath,
+        contents: cliTokenPayload,
+      });
+      if (platform !== "win32") {
+        yield* fs.chmod(cliTokenPath, 0o600).pipe(Effect.ignore);
+      }
+      yield* fs.makeDirectory(path.dirname(authStatePath), { recursive: true });
+      yield* writeFileStringAtomically({
+        filePath: authStatePath,
+        contents: encodeAcpAuthStateFile({ methodId: "oauth-personal" }),
+      });
+      return true;
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.logWarning("Could not migrate legacy Antigravity OAuth token.", { error }).pipe(
+          Effect.as(false),
+        ),
+      ),
+    );
+  },
+);
 
 export function buildAntigravityAcpSpawnInput(input: {
   readonly installation: { readonly executablePath: string };

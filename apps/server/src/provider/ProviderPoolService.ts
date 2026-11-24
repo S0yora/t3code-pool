@@ -153,6 +153,7 @@ const decodeVaultPayloadJson = Schema.decodeUnknownOption(
 export interface ResolvePoolSelectionInput {
   readonly modelSelection: ModelSelection;
   readonly threadId?: string | undefined;
+  readonly preferredInstanceId?: ProviderInstanceId | undefined;
   readonly excludeInstanceIds?: ReadonlySet<ProviderInstanceId> | undefined;
   readonly respectSticky?: boolean | undefined;
 }
@@ -636,7 +637,14 @@ const make = Effect.gen(function* () {
       clearExpiredCooldowns(current, nowMs),
     );
 
-    const stickyInstanceId = input.threadId ? state.threadLeases.get(input.threadId) : undefined;
+    const activeLeaseInstanceId = input.threadId
+      ? state.threadLeases.get(input.threadId)
+      : undefined;
+    const candidateStickyId = activeLeaseInstanceId ?? input.preferredInstanceId;
+    const stickyInstanceId =
+      candidateStickyId !== undefined && resolved.pool.memberInstanceIds.includes(candidateStickyId)
+        ? candidateStickyId
+        : undefined;
     const decision = selectPoolMember({
       poolId: resolved.poolId,
       pool: resolved.pool,
@@ -646,7 +654,8 @@ const make = Effect.gen(function* () {
       cooldownState: state,
       nowMs,
       excludeInstanceIds: input.excludeInstanceIds,
-      respectSticky: stickyInstanceId !== undefined && (input.respectSticky ?? true),
+      respectSticky:
+        stickyInstanceId !== undefined && (input.respectSticky ?? resolved.pool.stickyThread),
     });
 
     if (!decision) {

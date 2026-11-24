@@ -45,6 +45,7 @@ import {
   antigravityAuthUsesBrowser,
   buildAntigravityAcpSpawnInput,
   isAntigravitySignInRequiredError,
+  migrateLegacyAntigravityToken,
   prepareAntigravityProfile,
   resolveAntigravityInstanceDirectories,
   type AntigravityAuthConfig,
@@ -273,6 +274,15 @@ export const AntigravityDriver: ProviderDriver<
               })
             : cause,
         ),
+      );
+      yield* migrateLegacyAntigravityToken({
+        acpDirectory: profile.acpDirectory,
+        authMethod: auth.authMethod,
+        platform: profile.platform,
+      }).pipe(
+        Effect.provideService(FileSystem.FileSystem, fileSystem),
+        Effect.provideService(Path.Path, path),
+        Effect.provideService(HttpClient.HttpClient, httpClient),
       );
       // Use one directory per process; shared cleanup could delete files another session still reads.
       // Remove after the child dies, best-effort on Windows where handles may outlive the kill;

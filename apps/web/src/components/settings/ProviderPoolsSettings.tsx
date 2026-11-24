@@ -16,7 +16,9 @@ import {
 import * as Option from "effect/Option";
 import { msg, T, useGT, useMessages } from "gt-react";
 import {
+  ChevronDownIcon,
   ChevronRightIcon,
+  ChevronUpIcon,
   CloudDownloadIcon,
   CloudUploadIcon,
   PlusIcon,
@@ -82,11 +84,28 @@ interface PoolSyncActionResponse {
 const POOL_STRATEGIES: ReadonlyArray<{
   readonly value: ProviderPoolStrategy;
   readonly label: string;
+  readonly description: string;
 }> = [
-  { value: "least_used", label: msg("Least used") },
-  { value: "earliest_reset", label: msg("Soonest reset") },
-  { value: "round_robin", label: msg("Round robin") },
-  { value: "priority", label: msg("Priority") },
+  {
+    value: "least_used",
+    label: msg("Least used"),
+    description: msg("Picks the account with the most remaining quota."),
+  },
+  {
+    value: "earliest_reset",
+    label: msg("Soonest reset"),
+    description: msg("Uses the account whose quota window resets soonest."),
+  },
+  {
+    value: "round_robin",
+    label: msg("Round robin"),
+    description: msg("Rotates through selected accounts in the order below."),
+  },
+  {
+    value: "priority",
+    label: msg("Priority"),
+    description: msg("Uses accounts in the order below (#1 first) until one hits a limit."),
+  },
 ];
 
 const ACCOUNT_STATUS_LABELS: Readonly<Record<string, string>> = {
@@ -869,8 +888,20 @@ function PoolEditorDialog({
   const [stickyThread, setStickyThread] = useState(existingPool?.stickyThread ?? true);
 
   const driverAccounts = allAccounts.filter((account) => account.driver === driver);
+  const driverAccountById = new Map(
+    driverAccounts.map((account) => [account.instanceId, account] as const),
+  );
+  const orderedDriverAccounts = [
+    ...selectedMembers
+      .map((id) => driverAccountById.get(id))
+      .filter((account): account is (typeof driverAccounts)[number] => account !== undefined),
+    ...driverAccounts.filter((account) => !selectedMembers.includes(account.instanceId)),
+  ];
   const selectedStrategyEntry = POOL_STRATEGIES.find((item) => item.value === strategy);
   const selectedStrategyLabel = selectedStrategyEntry ? m(selectedStrategyEntry.label) : strategy;
+  const selectedStrategyDescription = selectedStrategyEntry
+    ? m(selectedStrategyEntry.description)
+    : undefined;
 
   const toggleMember = (instanceId: ProviderInstanceId) => {
     setSelectedMembers((current) =>
@@ -878,6 +909,20 @@ function PoolEditorDialog({
         ? current.filter((id) => id !== instanceId)
         : [...current, instanceId],
     );
+  };
+
+  const moveMember = (instanceId: ProviderInstanceId, delta: -1 | 1) => {
+    setSelectedMembers((current) => {
+      const index = current.indexOf(instanceId);
+      if (index === -1) return current;
+      const targetIndex = index + delta;
+      if (targetIndex < 0 || targetIndex >= current.length) return current;
+      const next = [...current];
+      const [moved] = next.splice(index, 1);
+      if (moved === undefined) return current;
+      next.splice(targetIndex, 0, moved);
+      return next;
+    });
   };
 
   const canSave = displayName.trim().length > 0 && selectedMembers.length > 0;
@@ -967,6 +1012,7 @@ function PoolEditorDialog({
 
               <SettingsRow
                 title={gt("Routing")}
+                description={selectedStrategyDescription}
                 control={
                   <Select
                     value={strategy}
@@ -1034,8 +1080,9 @@ function PoolEditorDialog({
                 </SettingsGroup>
               ) : (
                 <SettingsGroup className="max-h-56 overflow-y-auto">
-                  {driverAccounts.map((account) => {
-                    const checked = selectedMembers.includes(account.instanceId);
+                  {orderedDriverAccounts.map((account) => {
+                    const selectedIndex = selectedMembers.indexOf(account.instanceId);
+                    const checked = selectedIndex !== -1;
                     const otherPoolName = otherPoolByMember.get(account.instanceId);
                     const statusKey = !account.enabled ? "disabled" : account.status;
                     const statusMsg = ACCOUNT_STATUS_LABELS[statusKey];
@@ -1046,21 +1093,29 @@ function PoolEditorDialog({
                     const meta = otherPoolName
                       ? `${statusText} · ${gt("In {pool}", { pool: otherPoolName })}`
                       : statusText;
+                    const showReorder = checked && selectedMembers.length > 1;
 
                     return (
-                      <button
+                      <div
                         key={account.instanceId}
-                        type="button"
-                        role="checkbox"
-                        aria-checked={checked}
-                        onClick={() => toggleMember(account.instanceId)}
                         className={cn(
-                          "flex w-full cursor-pointer items-center justify-between gap-3 px-3 py-2.5 text-left text-sm transition-colors outline-none hover:bg-muted/25 focus-visible:bg-muted/25 sm:px-4",
+                          "flex w-full items-center justify-between gap-2 px-3 py-2.5 text-sm transition-colors hover:bg-muted/25 sm:px-4",
                           !account.enabled && "opacity-65",
                         )}
                       >
-                        <span className="flex min-w-0 flex-1 items-center gap-2.5">
+                        <button
+                          type="button"
+                          role="checkbox"
+                          aria-checked={checked}
+                          onClick={() => toggleMember(account.instanceId)}
+                          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-left outline-none focus-visible:underline"
+                        >
                           <CheckboxMark checked={checked} />
+                          {checked ? (
+                            <span className="w-5 shrink-0 font-mono text-2xs text-muted-foreground tabular-nums">
+                              #{selectedIndex + 1}
+                            </span>
+                          ) : null}
                           <span className="min-w-0 flex-1">
                             <span className="block truncate font-medium text-foreground">
                               {account.label}
@@ -1071,9 +1126,35 @@ function PoolEditorDialog({
                               </span>
                             ) : null}
                           </span>
-                        </span>
-                        <span className="shrink-0 text-xs text-muted-foreground">{meta}</span>
-                      </button>
+                        </button>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <span className="text-xs text-muted-foreground">{meta}</span>
+                          {showReorder ? (
+                            <div className="flex items-center">
+                              <Button
+                                type="button"
+                                size="icon-xs"
+                                variant="ghost"
+                                disabled={selectedIndex === 0}
+                                aria-label={gt("Move {account} up", { account: account.label })}
+                                onClick={() => moveMember(account.instanceId, -1)}
+                              >
+                                <ChevronUpIcon className="size-3.5" />
+                              </Button>
+                              <Button
+                                type="button"
+                                size="icon-xs"
+                                variant="ghost"
+                                disabled={selectedIndex === selectedMembers.length - 1}
+                                aria-label={gt("Move {account} down", { account: account.label })}
+                                onClick={() => moveMember(account.instanceId, 1)}
+                              >
+                                <ChevronDownIcon className="size-3.5" />
+                              </Button>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
                     );
                   })}
                 </SettingsGroup>

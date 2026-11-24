@@ -150,6 +150,110 @@ describe("ProviderPoolService", () => {
       }),
   );
 
+  it.effect(
+    "keeps a thread on its preferredInstanceId after releaseThread even when another account has more quota",
+    () =>
+      Effect.gen(function* () {
+        const poolId = ProviderPoolId.make("agy-pool");
+        const acc1 = "agy-1" as ProviderInstanceId;
+        const acc2 = "agy-2" as ProviderInstanceId;
+        const settings: ServerSettings = {
+          ...DEFAULT_SERVER_SETTINGS,
+          providerPools: {
+            [poolId]: {
+              driver: ProviderDriverKind.make("codex"),
+              displayName: "Agy Pool",
+              enabled: true,
+              memberInstanceIds: [acc1, acc2],
+              strategy: "least_used",
+              autoFailover: true,
+              stickyThread: true,
+            },
+          },
+        };
+        // acc1 has 60% used while acc2 has 10% used — least_used would normally pick acc2.
+        const providers = [makeProvider("agy-1", 60), makeProvider("agy-2", 10)];
+
+        yield* Effect.gen(function* () {
+          const pool = yield* ProviderPoolService.ProviderPoolService;
+
+          // After previous turn ended and released its active lease, follow-up turn supplies
+          // the thread's persisted instanceId (acc1) as preferredInstanceId.
+          // Even if the UI sent the pool representative (acc2), stickyThread must keep acc1.
+          const followUp = yield* pool.resolveModelSelection({
+            modelSelection: { instanceId: acc2, model: "gpt-5.4" },
+            threadId: "thread-sticky",
+            preferredInstanceId: acc1,
+          });
+          expect(followUp.modelSelection.instanceId).toBe(acc1);
+          expect(followUp.switched).toBe(true);
+
+          // Releasing the lease again and sending another turn still sticks to acc1.
+          yield* pool.releaseThread("thread-sticky");
+          const followUp2 = yield* pool.resolveModelSelection({
+            modelSelection: { instanceId: acc1, model: "gpt-5.4" },
+            threadId: "thread-sticky",
+            preferredInstanceId: acc1,
+          });
+          expect(followUp2.modelSelection.instanceId).toBe(acc1);
+          expect(followUp2.switched).toBe(false);
+
+          // A brand-new thread (no preferredInstanceId) still uses least_used and gets acc2.
+          const newThread = yield* pool.resolveModelSelection({
+            modelSelection: { instanceId: acc1, model: "gpt-5.4" },
+            threadId: "thread-new",
+          });
+          expect(newThread.modelSelection.instanceId).toBe(acc2);
+          expect(newThread.switched).toBe(true);
+
+          // If acc1 hits a usage limit cooldown, sticky thread fails over to acc2.
+          yield* pool.releaseThread("thread-sticky");
+          yield* pool.recordUsageLimit({ instanceId: acc1, reason: "usage_limit" });
+          const afterLimit = yield* pool.resolveModelSelection({
+            modelSelection: { instanceId: acc1, model: "gpt-5.4" },
+            threadId: "thread-sticky",
+            preferredInstanceId: acc1,
+          });
+          expect(afterLimit.modelSelection.instanceId).toBe(acc2);
+          expect(afterLimit.switched).toBe(true);
+        }).pipe(Effect.provide(makeTestLayer(settings, providers)));
+      }),
+  );
+
+  it.effect("does not stick to preferredInstanceId when pool.stickyThread is false", () =>
+    Effect.gen(function* () {
+      const poolId = ProviderPoolId.make("codex-pool");
+      const acc1 = "codex-1" as ProviderInstanceId;
+      const acc2 = "codex-2" as ProviderInstanceId;
+      const settings: ServerSettings = {
+        ...DEFAULT_SERVER_SETTINGS,
+        providerPools: {
+          [poolId]: {
+            driver: ProviderDriverKind.make("codex"),
+            displayName: "Codex Pool",
+            enabled: true,
+            memberInstanceIds: [acc1, acc2],
+            strategy: "least_used",
+            autoFailover: true,
+            stickyThread: false,
+          },
+        },
+      };
+      const providers = [makeProvider("codex-1", 70), makeProvider("codex-2", 10)];
+
+      yield* Effect.gen(function* () {
+        const pool = yield* ProviderPoolService.ProviderPoolService;
+        const resolved = yield* pool.resolveModelSelection({
+          modelSelection: { instanceId: acc1, model: "gpt-5.4" },
+          threadId: "thread-nonsticky",
+          preferredInstanceId: acc1,
+        });
+        expect(resolved.modelSelection.instanceId).toBe(acc2);
+        expect(resolved.switched).toBe(true);
+      }).pipe(Effect.provide(makeTestLayer(settings, providers)));
+    }),
+  );
+
   it("sanitizes foreign-OS paths and preserves local path overrides on pull", () => {
     const winToLinux = ProviderPoolService.mergePulledProviderInstances(
       {

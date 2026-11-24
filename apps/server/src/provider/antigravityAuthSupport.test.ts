@@ -11,6 +11,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import { HttpClient, HttpClientResponse } from "effect/http";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Result from "effect/Result";
@@ -30,6 +31,7 @@ import {
   isAntigravitySignInRequiredError,
   makeAntigravityStderrHandler,
   makeAntigravityStdoutTransform,
+  migrateLegacyAntigravityToken,
   antigravityLoginResponse,
   parseAntigravityAuthorizationUrl,
   prepareAntigravityProfile,
@@ -903,5 +905,97 @@ it.layer(NodeServices.layer)("Antigravity profile preparation", (it) => {
         expect(yield* fs.exists(profileDirectory)).toBe(false);
       }
     }),
+  );
+
+  it.effect(
+    "migrates legacy acp_token.json into antigravity-oauth-token and cache/acp-auth-state.json",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const temporaryDirectory = yield* fs.makeTempDirectoryScoped();
+        const acpDirectory = path.join(temporaryDirectory, "antigravity-acp");
+        yield* fs.makeDirectory(acpDirectory, { recursive: true });
+        yield* fs.writeFileString(
+          path.join(acpDirectory, "acp_token.json"),
+          JSON.stringify({
+            client_id: "test-client-id",
+            client_secret: "test-client-secret",
+            refresh_token: "1//legacy-refresh",
+            token_uri: "https://oauth2.googleapis.com/token",
+          }),
+        );
+
+        let tokenRequests = 0;
+        const mockHttpClient = HttpClient.make((request) => {
+          if (request.url === "https://oauth2.googleapis.com/token") {
+            tokenRequests += 1;
+            return Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                new Response(
+                  JSON.stringify({
+                    access_token: "ya29.migrated-access",
+                    expires_in: 3600,
+                    token_type: "Bearer",
+                  }),
+                  { status: 200, headers: { "content-type": "application/json" } },
+                ),
+              ),
+            );
+          }
+          if (request.url === "https://www.googleapis.com/oauth2/v2/userinfo") {
+            return Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                new Response(JSON.stringify({ email: "user@example.com" }), {
+                  status: 200,
+                  headers: { "content-type": "application/json" },
+                }),
+              ),
+            );
+          }
+          return Effect.succeed(
+            HttpClientResponse.fromWeb(request, new Response("Not Found", { status: 404 })),
+          );
+        });
+
+        const migrated = yield* migrateLegacyAntigravityToken({
+          acpDirectory,
+          authMethod: "oauth-personal",
+          platform: "linux",
+        }).pipe(Effect.provideService(HttpClient.HttpClient, mockHttpClient));
+
+        expect(migrated).toBe(true);
+        expect(tokenRequests).toBe(1);
+
+        const cliTokenRaw = yield* fs.readFileString(
+          path.join(acpDirectory, "antigravity-oauth-token"),
+        );
+        const cliToken = decodeJson(cliTokenRaw) as {
+          token: { access_token: string; refresh_token: string; token_type: string };
+          auth_method: string;
+          id_token_email: string;
+        };
+        expect(cliToken.token.access_token).toBe("ya29.migrated-access");
+        expect(cliToken.token.refresh_token).toBe("1//legacy-refresh");
+        expect(cliToken.token.token_type).toBe("Bearer");
+        expect(cliToken.auth_method).toBe("consumer");
+        expect(cliToken.id_token_email).toBe("user@example.com");
+
+        const authStateRaw = yield* fs.readFileString(
+          path.join(acpDirectory, "cache", "acp-auth-state.json"),
+        );
+        expect(decodeJson(authStateRaw)).toEqual({ methodId: "oauth-personal" });
+
+        // Second call is a no-op once antigravity-oauth-token exists.
+        const second = yield* migrateLegacyAntigravityToken({
+          acpDirectory,
+          authMethod: "oauth-personal",
+          platform: "linux",
+        }).pipe(Effect.provideService(HttpClient.HttpClient, mockHttpClient));
+        expect(second).toBe(false);
+        expect(tokenRequests).toBe(1);
+      }),
   );
 });
