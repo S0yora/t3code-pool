@@ -23,6 +23,10 @@
 </p>
 
 <p align="center">
+  <strong>Drop-in replacement on desktop:</strong> just download and install over official T3 Code — no need to uninstall. All chats, projects, settings, and signed-in accounts carry over automatically. (<a href="#install-notes">Platform notes</a>)
+</p>
+
+<p align="center">
   <a href="#how-it-works">How it works</a> |
   <a href="#device-sync">Device sync</a> |
   <a href="#install">Install</a> |
@@ -51,7 +55,7 @@ Each pool sits in front of two or more accounts of the same provider (Codex, Ant
 - **Routing strategy.** Choose how new threads pick an account: **Least used**, **Earliest reset**, **Round robin**, or **Priority**.
 - **Sticky threads.** A thread stays on the same account across turns so session state and context do not reset.
 - **Auto-failover.** When an account hits a rate limit or quota error, it goes on cooldown and the turn automatically switches to the next ready account.
-- **Clean picker.** Pooled accounts stay grouped in Settings and appear as a single entry in the chat model picker across desktop, web, and mobile.
+- **Clean picker & sidebar.** Pooled accounts collapse into an expandable group in **Settings / Providers** (with live ready/total counts) and appear as a single entry in the chat model picker across desktop, web, and mobile.
 
 <p align="center">
   <img src="./docs/assets/pool-editor.png" width="520" alt="Edit pool dialog in T3 Code" />
@@ -82,6 +86,14 @@ Download `v0.1.11` directly or browse all files (including [`SHA256SUMS`](https:
 | ![Android](https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white)                    | [Signed APK (arm64-v8a)](https://github.com/S0yora/t3code-pool/releases/download/v0.1.11/T3-Code-0.1.11-android-arm64-v8a.apk)                                                                                                                                                                                                                                                                                                                                  |
 | Web / iOS                                                                                               | Open your T3 Code server URL in a browser or iOS Safari                                                                                                                                                                                                                                                                                                                                                                                                         |
 
+### Install notes
+
+- **Desktop (Windows / macOS / Linux):** Drop-in replacement — close official T3 Code and install right over it, no need to uninstall. It uses the same `~/.t3/userdata` folder, so all existing chats, projects, settings, and signed-in accounts stay intact (and switching back to official T3 Code works the same way).
+- **Windows:** Builds are unsigned, so SmartScreen will warn on first launch — click **More info → Run anyway**.
+- **macOS:** Builds are not notarized with an Apple Developer certificate. If Gatekeeper blocks launch, open it via **System Settings → Privacy & Security → Open Anyway**, or run `xattr -cr "/Applications/T3 Code (Beta).app"`.
+- **Linux:** For `.AppImage`, run `chmod +x T3-Code-*.AppImage` first. For `.deb`, install or upgrade with `sudo apt install ./T3-Code-*.deb`.
+- **Android:** Signed with this fork's own key, so Android will not install it over the Google Play build. Uninstall official T3 Code on your phone first, install the APK, and reconnect to your server (chats stay on the server).
+
 ## Quick setup
 
 ### Create a pool
@@ -89,6 +101,12 @@ Download `v0.1.11` directly or browse all files (including [`SHA256SUMS`](https:
 1. Sign in to two or more accounts of the same provider in **Settings / Providers**.
 2. Scroll to **Account pools**, click **Add pool**, pick a routing strategy, and select the accounts to include.
 3. Choose the pool in the chat model picker.
+
+Pooled accounts collapse into a single expandable group in **Settings / Providers** with a live ready/total counter (`1/4`), keeping unpooled providers separate:
+
+<p align="center">
+  <img src="./docs/assets/providers-grouped.png" width="400" alt="Pooled accounts grouped in Settings / Providers with ready/total counter" />
+</p>
 
 ### Sync across machines (optional)
 
