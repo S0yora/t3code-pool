@@ -1,0 +1,112 @@
+name: Publish Release from Run
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Workflow run ID whose artifacts to publish"
+        required: true
+        type: string
+      tag:
+        description: "Release tag (for example v0.1.12)"
+        required: true
+        type: string
+      previous_tag:
+        description: "Previous release tag for generated notes (optional)"
+        required: false
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    name: Publish GitHub Release from run artifacts
+    if: github.repository == 'S0yora/t3code-pool'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Setup dependencies
+        uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=@t3tools/scripts...
+
+      - name: Download artifacts from run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ inputs.run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets release-assets-dl
+          for pattern in "desktop-*" "cli-*" "android-apk"; do
+            gh run download "$RUN_ID" -R "$GH_REPO" --pattern "$pattern" -D release-assets-dl || true
+          done
+          find release-assets-dl -type f -exec mv -f -t release-assets {} +
+          ls -lh release-assets
+
+      - name: Merge available updater manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f release-assets/latest-win-x64.yml && -f release-assets/latest-win-arm64.yml ]]; then
+            node scripts/merge-update-manifests.ts --platform win \
+              release-assets/latest-win-x64.yml \
+              release-assets/latest-win-arm64.yml \
+              release-assets/latest.yml
+            rm -f release-assets/latest-win-x64.yml release-assets/latest-win-arm64.yml
+          fi
+          if [[ -f release-assets/latest-mac.yml && -f release-assets/latest-mac-x64.yml ]]; then
+            node scripts/merge-update-manifests.ts --platform mac \
+              release-assets/latest-mac.yml \
+              release-assets/latest-mac-x64.yml \
+              release-assets/latest-mac.yml
+            rm -f release-assets/latest-mac-x64.yml
+          fi
+
+      - name: Write CLI archive checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-assets
+          shopt -s nullglob
+          archives=(t3-*.tar.gz t3-*.zip)
+          if [[ ${#archives[@]} -eq 0 ]]; then
+            echo "No CLI archives found." >&2
+            exit 1
+          fi
+          sha256sum "${archives[@]}" > SHA256SUMS
+          cat SHA256SUMS
+
+      - id: release_files
+        name: Resolve release asset list
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          {
+            echo 'files<<EOF'
+            for f in release-assets/*.dmg release-assets/*.zip release-assets/*.AppImage release-assets/*.deb release-assets/*.exe release-assets/*.blockmap release-assets/*.yml release-assets/*.tar.gz release-assets/*.apk release-assets/SHA256SUMS; do
+              [[ "$(basename "$f")" == builder-debug* ]] && continue
+              echo "$f"
+            done
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
+        with:
+          tag_name: ${{ inputs.tag }}
+          name: T3 Code ${{ inputs.tag }}
+          generate_release_notes: true
+          previous_tag: ${{ inputs.previous_tag }}
+          make_latest: true
+          files: ${{ steps.release_files.outputs.files }}
+          fail_on_unmatched_files: true
+          token: ${{ github.token }}
