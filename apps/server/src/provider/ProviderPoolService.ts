@@ -46,6 +46,7 @@ import { forkParked } from "../serverActivation.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ProviderCredentialStore from "./ProviderCredentialStore.ts";
 import * as ProviderRegistry from "./ProviderRegistry.ts";
+import { resolveAntigravityInstanceDirectories } from "./antigravityAuthSupport.ts";
 
 class PoolHubHttpError extends Schema.TaggedError<PoolHubHttpError>()("PoolHubHttpError", {
   status: Schema.Number,
@@ -120,6 +121,16 @@ export function mergePulledProviderInstances(
 }
 const HUB_DEVICE_REPORT_TTL_MS = 5 * 60_000;
 
+const ANTIGRAVITY_SYNCED_PROFILE_FILES = [
+  "antigravity-acp/antigravity-oauth-token",
+  "antigravity-acp/acp_token.json",
+  "antigravity-acp/installation_id",
+] as const;
+
+const ALLOWED_ANTIGRAVITY_PROFILE_FILES: ReadonlySet<string> = new Set(
+  ANTIGRAVITY_SYNCED_PROFILE_FILES,
+);
+
 const SyncedCredentialRecordSchema = Schema.Struct({
   namespace: Schema.String,
   bindingId: Schema.String,
@@ -127,12 +138,21 @@ const SyncedCredentialRecordSchema = Schema.Struct({
 });
 type SyncedCredentialRecord = typeof SyncedCredentialRecordSchema.Type;
 
+const SyncedProfileFileSchema = Schema.Struct({
+  driver: Schema.String,
+  instanceId: Schema.String,
+  relativePath: Schema.String,
+  valueBase64: Schema.String,
+});
+type SyncedProfileFile = typeof SyncedProfileFileSchema.Type;
+
 const PoolVaultPayloadSchema = Schema.Struct({
   version: Schema.Literal(1),
   exportedAtMs: Schema.Number,
   providerPools: Schema.Record(Schema.String, ProviderPoolConfig),
   providerInstances: Schema.Record(Schema.String, ProviderInstanceConfig),
   credentials: Schema.Array(SyncedCredentialRecordSchema),
+  profileFiles: Schema.optional(Schema.Array(SyncedProfileFileSchema)),
 });
 type PoolVaultPayload = typeof PoolVaultPayloadSchema.Type;
 
@@ -217,6 +237,20 @@ const make = Effect.gen(function* () {
   const stateRef = yield* Ref.make<PoolCooldownState>(EMPTY_POOL_COOLDOWN_STATE);
   const deviceReportsRef = yield* Ref.make<ReadonlyMap<string, DeviceReportEntry>>(new Map());
   const bundleRef = yield* Ref.make<ProviderPoolEncryptedBundle | null>(null);
+  const lastAppliedBundleAtRef = yield* Ref.make<number | null>(null);
+  const autoPullInFlightRef = yield* Ref.make(false);
+
+  const triggerAutoPull = Effect.fn("ProviderPoolService.triggerAutoPull")(function* () {
+    const acquired = yield* Ref.modify(autoPullInFlightRef, (running) =>
+      running ? ([false, true] as const) : ([true, true] as const),
+    );
+    if (!acquired) return;
+    yield* pullEncryptedBundle().pipe(
+      Effect.ensuring(Ref.set(autoPullInFlightRef, false)),
+      Effect.ignore,
+      Effect.forkDetach,
+    );
+  });
 
   // Hydrate persisted encrypted bundle if running as hub.
   const initialBundleText = yield* fs.readFileString(bundlePath).pipe(Effect.option);
@@ -344,6 +378,16 @@ const make = Effect.gen(function* () {
         nowMs,
       ),
     );
+    const remoteBundleAt = responseResult.success.bundleUpdatedAtMs;
+    if (
+      remoteBundleAt !== null &&
+      settingsSecretLiteral(sync.syncPassphrase).trim().length > 0
+    ) {
+      const lastApplied = yield* Ref.get(lastAppliedBundleAtRef);
+      if (lastApplied === null || remoteBundleAt > lastApplied) {
+        yield* triggerAutoPull();
+      }
+    }
     return {
       ok: true,
       detail: `Synced ${responseResult.success.cooldowns.length} cooldown(s) from hub.`,
@@ -384,6 +428,82 @@ const make = Effect.gen(function* () {
     return collected;
   });
 
+  const collectPoolProfileFiles = Effect.fn("ProviderPoolService.collectPoolProfileFiles")(
+    function* (
+      memberInstanceIds: ReadonlyArray<ProviderInstanceId>,
+      providerInstances: Readonly<Record<string, ProviderInstanceConfig>>,
+    ) {
+      if (Option.isNone(digestOption)) {
+        return [] as ReadonlyArray<SyncedProfileFile>;
+      }
+      const collected: Array<SyncedProfileFile> = [];
+      for (const instanceId of memberInstanceIds) {
+        const configEntry = providerInstances[instanceId];
+        if (!configEntry || configEntry.driver !== "antigravity") continue;
+        const directories = yield* resolveAntigravityInstanceDirectories(
+          config.stateDir,
+          instanceId,
+        ).pipe(
+          Effect.provideService(Digest.Digest, digestOption.value),
+          Effect.provideService(Path.Path, path),
+          Effect.option,
+        );
+        if (Option.isNone(directories)) continue;
+        for (const relativePath of ANTIGRAVITY_SYNCED_PROFILE_FILES) {
+          const filePath = path.join(directories.value.profile, ...relativePath.split("/"));
+          const raw = yield* fs.readFile(filePath).pipe(Effect.option);
+          if (Option.isSome(raw) && raw.value.byteLength > 0) {
+            collected.push({
+              driver: "antigravity",
+              instanceId,
+              relativePath,
+              valueBase64: Buffer.from(raw.value).toString("base64"),
+            });
+          }
+        }
+      }
+      return collected;
+    },
+  );
+
+  const restorePoolProfileFiles = Effect.fn("ProviderPoolService.restorePoolProfileFiles")(
+    function* (profileFiles: ReadonlyArray<SyncedProfileFile>, platform: NodeJS.Platform) {
+      if (Option.isNone(digestOption) || profileFiles.length === 0) {
+        return 0;
+      }
+      let restored = 0;
+      for (const file of profileFiles) {
+        if (
+          file.driver !== "antigravity" ||
+          !ALLOWED_ANTIGRAVITY_PROFILE_FILES.has(file.relativePath)
+        ) {
+          continue;
+        }
+        const directories = yield* resolveAntigravityInstanceDirectories(
+          config.stateDir,
+          file.instanceId as ProviderInstanceId,
+        ).pipe(
+          Effect.provideService(Digest.Digest, digestOption.value),
+          Effect.provideService(Path.Path, path),
+          Effect.option,
+        );
+        if (Option.isNone(directories)) continue;
+        const targetPath = path.join(directories.value.profile, ...file.relativePath.split("/"));
+        yield* fs.makeDirectory(path.dirname(targetPath), { recursive: true }).pipe(Effect.ignore);
+        const written = yield* fs
+          .writeFile(targetPath, new Uint8Array(Buffer.from(file.valueBase64, "base64")))
+          .pipe(Effect.as(true), Effect.orElseSucceed(() => false));
+        if (written) {
+          if (platform !== "win32") {
+            yield* fs.chmod(targetPath, 0o600).pipe(Effect.ignore);
+          }
+          restored++;
+        }
+      }
+      return restored;
+    },
+  );
+
   const putEncryptedBundle = Effect.fn("ProviderPoolService.putEncryptedBundle")(function* (
     bundle: ProviderPoolEncryptedBundle,
   ) {
@@ -392,6 +512,18 @@ const make = Effect.gen(function* () {
     yield* fs
       .writeFileString(bundlePath, encodeBundleJson(bundle))
       .pipe(Effect.ignore({ log: true }));
+    const settings = yield* settingsService.getSettings.pipe(Effect.option);
+    if (
+      Option.isSome(settings) &&
+      settings.value.providerPoolSync.enabled &&
+      settings.value.providerPoolSync.mode === "hub" &&
+      settingsSecretLiteral(settings.value.providerPoolSync.syncPassphrase).trim().length > 0
+    ) {
+      const lastApplied = yield* Ref.get(lastAppliedBundleAtRef);
+      if (lastApplied === null || bundle.updatedAtMs > lastApplied) {
+        yield* triggerAutoPull();
+      }
+    }
     return { accepted: true, updatedAtMs: bundle.updatedAtMs };
   });
 
@@ -427,6 +559,9 @@ const make = Effect.gen(function* () {
     const credentials = sync.syncCredentials
       ? yield* collectPoolCredentials(pooledMemberIds, settings.providerInstances)
       : [];
+    const profileFiles = sync.syncCredentials
+      ? yield* collectPoolProfileFiles(pooledMemberIds, settings.providerInstances)
+      : [];
 
     const nowMs = yield* Clock.currentTimeMillis;
     const payload: PoolVaultPayload = {
@@ -435,6 +570,7 @@ const make = Effect.gen(function* () {
       providerPools: settings.providerPools,
       providerInstances: pooledInstances,
       credentials,
+      ...(profileFiles.length > 0 ? { profileFiles } : {}),
     };
 
     const plaintextJson = encodeVaultPayloadJson(payload);
@@ -449,11 +585,13 @@ const make = Effect.gen(function* () {
       } satisfies PoolSyncResult;
     }
 
+    const totalCredentials = credentials.length + profileFiles.length;
     if (isHub) {
+      yield* Ref.set(lastAppliedBundleAtRef, nowMs);
       const stored = yield* putEncryptedBundle(encrypted.success);
       return {
         ok: true,
-        detail: `Saved encrypted vault on this Hub with ${Object.keys(settings.providerPools).length} pool(s), ${pooledMemberIds.length} account(s), and ${credentials.length} credential(s).`,
+        detail: `Saved encrypted vault on this Hub with ${Object.keys(settings.providerPools).length} pool(s), ${pooledMemberIds.length} account(s), and ${totalCredentials} credential(s).`,
         updatedAtMs: stored.updatedAtMs,
       } satisfies PoolSyncResult;
     }
@@ -485,10 +623,12 @@ const make = Effect.gen(function* () {
           uploaded.failure instanceof Error ? uploaded.failure.message : String(uploaded.failure),
       } satisfies PoolSyncResult;
     }
+    const pushedUpdatedAtMs = uploaded.success.updatedAtMs ?? nowMs;
+    yield* Ref.set(lastAppliedBundleAtRef, pushedUpdatedAtMs);
     return {
       ok: true,
-      detail: `Pushed ${Object.keys(settings.providerPools).length} pool(s), ${pooledMemberIds.length} account(s), and ${credentials.length} credential(s).`,
-      updatedAtMs: uploaded.success.updatedAtMs ?? nowMs,
+      detail: `Pushed ${Object.keys(settings.providerPools).length} pool(s), ${pooledMemberIds.length} account(s), and ${totalCredentials} credential(s).`,
+      updatedAtMs: pushedUpdatedAtMs,
     } satisfies PoolSyncResult;
   });
 
@@ -596,12 +736,17 @@ const make = Effect.gen(function* () {
         restoredCredentials++;
       }
     }
+    const restoredProfileFiles =
+      sync.syncCredentials && payload.profileFiles && payload.profileFiles.length > 0
+        ? yield* restorePoolProfileFiles(payload.profileFiles, platform)
+        : 0;
 
+    yield* Ref.set(lastAppliedBundleAtRef, bundle.updatedAtMs);
     yield* providerRegistry.refresh().pipe(Effect.ignore);
 
     return {
       ok: true,
-      detail: `Imported ${Object.keys(payload.providerPools).length} pool(s), ${Object.keys(payload.providerInstances).length} account(s), and ${restoredCredentials} credential(s).`,
+      detail: `Imported ${Object.keys(payload.providerPools).length} pool(s), ${Object.keys(payload.providerInstances).length} account(s), and ${restoredCredentials + restoredProfileFiles} credential(s).`,
       updatedAtMs: bundle.updatedAtMs,
     } satisfies PoolSyncResult;
   });
