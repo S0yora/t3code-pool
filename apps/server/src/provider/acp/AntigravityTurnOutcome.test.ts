@@ -43,6 +43,32 @@ const BAD_GATEWAY_ERROR = Buffer.concat([
   ),
   Buffer.from("\nThe model is currently unreachable."),
 ]);
+const VERIFICATION_URL =
+  "https://accounts.google.com/v3/signin/continue?plt=fixture&flowName=GlifWebSignIn";
+const CLASSIC_VERIFICATION_URL =
+  "https://accounts.google.com/signin/continue?sarp=1&scc=1&plt=fixture&flowName=GlifWebSignIn";
+const verificationError = (url: string | undefined, compact = false) => {
+  const response = {
+    error: {
+      code: 403,
+      details: [
+        { "@type": "type.googleapis.com/google.rpc.Help", links: [] },
+        {
+          "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+          domain: "cloudcode-pa.googleapis.com",
+          metadata: { validation_url: url },
+          reason: "VALIDATION_REQUIRED",
+        },
+      ],
+      message: "Verify your account to continue.",
+      status: "PERMISSION_DENIED",
+    },
+  };
+  const body = compact ? JSON.stringify(response) : JSON.stringify(response, null, 2);
+  return errorPayload(
+    `Verification Required\u0012PERMISSION_DENIED (code 403): Verify your account to continue.\u001aHTTP 403 Forbidden\n\n${body}\n`,
+  );
+};
 // Vertex Claude rejects a resumed history whose saved thinking block lost its signature.
 const MISSING_SIGNATURE_ERROR = errorPayload(
   'Error 400, Message: {"type":"error","error":{"type":"invalid_request_error","message":"messages.1.content.0.thinking.signature: Field required"},"request_id":"req_vrtx_test"}, Status: INVALID_ARGUMENT, Details: []',
@@ -60,10 +86,11 @@ const STATUS_NOT_FOUND_ERROR = Buffer.concat([
     'NOT_FOUND (code 404): Requested entity was not found.\u001a\u0080\u0001HTTP 404 Not Found\n\n{"error":{"code":404,"message":"Requested entity was not found.","status":"NOT_FOUND"}}',
   ),
 ]);
-const VALIDATION_REQUIRED_ERROR = Buffer.concat([
-  Buffer.from([0x12, 0x3e]),
+// Antigravity 1.5 states the quota reset only as a Go duration in its message.
+const STATUS_QUOTA_ERROR = Buffer.concat([
+  Buffer.from([0x12, 0x6e]),
   Buffer.from(
-    'PERMISSION_DENIED (code 403): Verify your account to continue.\u001a\u0080\u0001HTTP 403 Forbidden\n\n{"error":{"code":403,"message":"Verify your account to continue.","status":"PERMISSION_DENIED","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"VALIDATION_REQUIRED","metadata":{"validation_url":"https://accounts.google.com/v3/signin/continue?plt=abc123\\u0026continue=https://developers.google.com/gemini-code-assist/auth/auth_success_gemini\\u0026authuser"}}]}}',
+    "RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 4m42s.",
   ),
 ]);
 // The model's reply quoting the agent's quota notice is an ordinary planner response.
@@ -128,6 +155,13 @@ describe("watchAntigravityPromptOutcome", () => {
           resetAt: "1970-01-01T01:00:00.000Z",
         }),
       );
+      assert.deepInclude(
+        (yield* turn([
+          [USER_INPUT, input],
+          [ERROR_MESSAGE, STATUS_QUOTA_ERROR],
+        ]))?.failure,
+        { class: "usage_limit", resetAt: "1970-01-01T00:04:42.000Z" },
+      );
       // The earlier error step is outside this turn.
       assert.isUndefined(
         yield* turn(
@@ -163,19 +197,6 @@ describe("watchAntigravityPromptOutcome", () => {
           class: "provider_error",
           message: "Request contains an invalid argument.",
           code: "INVALID_ARGUMENT",
-          retryable: false,
-        }),
-      );
-      assert.deepEqual(
-        yield* turn([
-          [USER_INPUT, input],
-          [ERROR_MESSAGE, VALIDATION_REQUIRED_ERROR],
-        ]),
-        reusable({
-          class: "provider_error",
-          message:
-            "Verify your account to continue.\nhttps://accounts.google.com/v3/signin/continue?plt=abc123&continue=https://developers.google.com/gemini-code-assist/auth/auth_success_gemini&authuser",
-          code: "VALIDATION_REQUIRED",
           retryable: false,
         }),
       );
@@ -241,6 +262,34 @@ describe("watchAntigravityPromptOutcome", () => {
         ]))?.failure.retryable,
         false,
       );
+      // Google account verification errors surface the verified continuation link on both
+      // pretty-printed and compact HTTP bodies, while rejecting untrusted or malformed URLs.
+      for (const [url, compact, accepted] of [
+        [VERIFICATION_URL, false, true],
+        [CLASSIC_VERIFICATION_URL, true, true],
+        [undefined, false, false],
+        [
+          "https://accounts.google.com.example.invalid/v3/signin/continue?plt=fixture",
+          false,
+          false,
+        ],
+        ["https://accounts.google.com/v3/signin/continue?plt=fixture\u0007", false, false],
+      ] as const) {
+        assert.deepEqual(
+          yield* turn([
+            [USER_INPUT, input],
+            [ERROR_MESSAGE, verificationError(url, compact)],
+          ]),
+          reusable({
+            class: "permission_error",
+            message: "Verify your Google account, then retry this turn.",
+            code: "VALIDATION_REQUIRED",
+            retryable: false,
+            ...(accepted && url !== undefined ? { verificationUrl: url } : {}),
+          }),
+        );
+      }
+      assert.isUndefined(yield* turn([[PLANNER_RESPONSE, verificationError(VERIFICATION_URL)]]));
       // A saved thinking block without a valid signature fails every later prompt.
       for (const error of [MISSING_SIGNATURE_ERROR, INVALID_SIGNATURE_ERROR]) {
         const outcome = yield* turn([
