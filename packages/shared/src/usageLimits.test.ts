@@ -3,6 +3,7 @@ import {
   EnvironmentId,
   ProviderDriverKind,
   ProviderInstanceId,
+  ProviderPoolId,
   type ServerProvider,
   type UsageLimitSourceAccount,
   UsageLimitSourceId,
@@ -16,6 +17,7 @@ import {
   collectProviderUsageLimits,
   sameUsageLimitCommandCoverage,
   withUsageLimitsCommands,
+  collectConfiguredProviderPools,
   collectLimitAccounts,
   collectExternalUsageLinks,
   collectLimitPools,
@@ -1374,6 +1376,76 @@ describe("pooled account columns", () => {
       now,
     );
     expect(keys(pool!)).toEqual([["b", "a"]]);
+  });
+
+  it("splits accounts of the same driver into separate sections per configured providerPool", () => {
+    const agyDriver = ProviderDriverKind.make("antigravity");
+    const pro1 = ProviderInstanceId.make("agy_pro_1");
+    const pro2 = ProviderInstanceId.make("agy_pro_2");
+    const plus1 = ProviderInstanceId.make("agy_plus_1");
+    const standalone = ProviderInstanceId.make("agy_solo");
+    const makeAgy = (instanceId: ProviderInstanceId, displayName: string, usedPercent: number) =>
+      provider({
+        instanceId,
+        driver: agyDriver,
+        displayName,
+        usageLimits: {
+          checkedAt: "2026-09-03T11:55:00.000Z",
+          windows: [{ ...window, id: "gemini-5h", usedPercent }],
+        },
+      });
+    const presentations = new Map([
+      [
+        EnvironmentId.make("local"),
+        {
+          entry: { target: { label: "Local" } },
+          serverConfig: {
+            providers: [
+              makeAgy(pro1, "Pro 1", 20),
+              makeAgy(pro2, "Pro 2", 40),
+              makeAgy(plus1, "Plus 1", 10),
+              makeAgy(standalone, "Solo", 50),
+            ],
+            settings: {
+              providerPools: {
+                [ProviderPoolId.make("agy-pro")]: {
+                  driver: agyDriver,
+                  displayName: "Antigravity PRO",
+                  memberInstanceIds: [pro1, pro2],
+                  strategy: "least_used" as const,
+                  autoFailover: true,
+                  stickyThread: true,
+                  enabled: true,
+                },
+                [ProviderPoolId.make("agy-plus")]: {
+                  driver: agyDriver,
+                  displayName: "Antigravity PLUS",
+                  memberInstanceIds: [plus1],
+                  strategy: "least_used" as const,
+                  autoFailover: true,
+                  stickyThread: true,
+                  enabled: true,
+                },
+              },
+            },
+          },
+        },
+      ],
+    ]);
+
+    const configuredPools = collectConfiguredProviderPools(presentations);
+    const pools = collectLimitPools(collectLimitAccounts(presentations), now, configuredPools);
+    expect(pools).toHaveLength(3);
+    expect(pools[0]?.groupKey).toBe("pool:agy-pro");
+    expect(pools[0]?.label).toBe("Antigravity PRO");
+    expect(pools[0]?.accounts.map((a) => a.displayName)).toEqual(["Pro 1", "Pro 2"]);
+    expect(pools[0]?.windows[0]?.remainingPercent).toBe(70);
+    expect(pools[1]?.groupKey).toBe("pool:agy-plus");
+    expect(pools[1]?.label).toBe("Antigravity PLUS");
+    expect(pools[1]?.accounts.map((a) => a.displayName)).toEqual(["Plus 1"]);
+    expect(pools[1]?.windows[0]?.remainingPercent).toBe(90);
+    expect(pools[2]?.groupKey).toBe("driver:antigravity:unpooled");
+    expect(pools[2]?.accounts.map((a) => a.displayName)).toEqual(["Solo"]);
   });
 });
 

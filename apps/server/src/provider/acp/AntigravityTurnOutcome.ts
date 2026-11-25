@@ -35,6 +35,8 @@ const RESET_TIMESTAMP = /\bquotaResetTimeStamp:([^\s\]]+)/;
 const RESET_DELAY = /\bquotaResetDelay:((?:\d+(?:\.\d+)?(?:ns|us|µs|μs|ms|h|m|s))+)(?=[\s\]])/;
 // google.rpc.RetryInfo, which plain rate limits carry instead of a quota reset.
 const RETRY_DELAY = /\bretryDelay:((?:\d+(?:\.\d+)?(?:ns|us|µs|μs|ms|h|m|s))+)(?=[\s\]])/;
+const VALIDATION_URL_JSON = /"validation_url"\s*:\s*"((?:[^"\\]|\\.)+)"/;
+const VALIDATION_URL_MAP = /\bvalidation_url:(https:\/\/[^\s\]"]+)/;
 const GO_DURATION_PART = /(\d+(?:\.\d+)?)(ns|us|µs|μs|ms|h|m|s)/g;
 const GO_DURATION_UNIT_MS: Record<string, number> = {
   ns: 1e-6,
@@ -128,6 +130,34 @@ function statusError(text: string) {
   return match === null ? null : ([match[0], match[2], match[3], match[1]] as const);
 }
 
+function isTrustedGoogleValidationUrl(candidate: string): boolean {
+  try {
+    const parsed = new URL(candidate);
+    return (
+      parsed.protocol === "https:" &&
+      (parsed.hostname === "accounts.google.com" || parsed.hostname.endsWith(".google.com"))
+    );
+  } catch {
+    return false;
+  }
+}
+
+function validationUrlFrom(text: string): string | undefined {
+  const jsonMatch = VALIDATION_URL_JSON.exec(text)?.[1];
+  if (jsonMatch !== undefined) {
+    try {
+      const decoded = JSON.parse(`"${jsonMatch}"`) as unknown;
+      if (typeof decoded === "string" && isTrustedGoogleValidationUrl(decoded)) {
+        return decoded;
+      }
+    } catch {
+      // Fall through to plain map format.
+    }
+  }
+  const mapMatch = VALIDATION_URL_MAP.exec(text)?.[1];
+  return mapMatch !== undefined && isTrustedGoogleValidationUrl(mapMatch) ? mapMatch : undefined;
+}
+
 function turnFailure(
   stopReason: EffectAcpSchema.StopReason,
   step: LastStep | undefined,
@@ -184,13 +214,19 @@ function turnFailure(
   const rateLimited = httpStatus === "429" || status === "RESOURCE_EXHAUSTED";
   // A 404 before the model answered is an unknown or unentitled model; after, a transient edge error.
   const transientNotFound = httpStatus === "404" && step?.reachedModel === true;
-  const failure = makeProviderFailure({
+  const validationUrl = validationUrlFrom(text);
+  const baseFailure = makeProviderFailure({
     class: rateLimited ? "usage_limit" : "provider_error",
     message: message!.trim(),
-    code: status ?? null,
+    code: validationUrl !== undefined ? "VALIDATION_REQUIRED" : (status ?? null),
     retryable: rateLimited || transientNotFound || Number(httpStatus) >= 500,
     resetAt: resetAtFrom(text, now) ?? null,
   });
+  // makeProviderFailure strips query strings from URLs, which would break Google's ?plt=... link.
+  const failure =
+    validationUrl !== undefined && !baseFailure.message.includes(validationUrl)
+      ? { ...baseFailure, message: `${baseFailure.message}\n${validationUrl}` }
+      : baseFailure;
   return transientNotFound
     ? { failure, threadDisposition: "reusable", resumeWith: "continue" }
     : reusable(failure);

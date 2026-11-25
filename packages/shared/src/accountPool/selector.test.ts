@@ -22,6 +22,7 @@ function makeProvider(
     resetsAt?: string;
     enabled?: boolean;
     authStatus?: "authenticated" | "unauthenticated";
+    models?: ReadonlyArray<{ readonly slug: string; readonly aliases?: ReadonlyArray<string> }>;
   } = {},
 ): ServerProvider {
   const windows = [];
@@ -51,7 +52,13 @@ function makeProvider(
     status: "ready",
     auth: { status: opts.authStatus ?? "authenticated" },
     checkedAt: "2026-11-23T12:00:00.000Z",
-    models: [],
+    models: (opts.models ?? []).map((model) => ({
+      slug: model.slug,
+      name: model.slug,
+      isCustom: false,
+      capabilities: null,
+      ...(model.aliases ? { aliases: model.aliases } : {}),
+    })),
     slashCommands: [],
     skills: [],
     usageLimits: {
@@ -213,5 +220,96 @@ describe("selectPoolMember", () => {
     expect(reps.hiddenMemberIds.has(ProviderInstanceId.make("codex_1"))).toBe(true);
     expect(reps.hiddenMemberIds.has(ProviderInstanceId.make("codex_2"))).toBe(false);
     expect(reps.hiddenMemberIds.has(ProviderInstanceId.make("codex_3"))).toBe(true);
+  });
+
+  it("filters pool members by requested model compatibility (PRO vs PLUS)", () => {
+    const pro1 = ProviderInstanceId.make("agy_pro_1");
+    const pro2 = ProviderInstanceId.make("agy_pro_2");
+    const plus = ProviderInstanceId.make("agy_plus");
+    const providers = [
+      makeProvider("agy_plus", {
+        usedPercent: 0,
+        models: [
+          { slug: "gemini-4-hydrogen" },
+          { slug: "gemini-3.8-flash", aliases: ["antigravity-default"] },
+        ],
+      }),
+      makeProvider("agy_pro_1", {
+        usedPercent: 60,
+        models: [
+          { slug: "gemini-4-neon" },
+          { slug: "gemini-4-hydrogen" },
+          { slug: "gemini-3.8-flash", aliases: ["antigravity-default"] },
+        ],
+      }),
+      makeProvider("agy_pro_2", {
+        usedPercent: 25,
+        models: [
+          { slug: "gemini-4-neon" },
+          { slug: "gemini-4-hydrogen" },
+          { slug: "gemini-3.8-flash", aliases: ["antigravity-default"] },
+        ],
+      }),
+    ];
+    const pool = makePool({ memberInstanceIds: [plus, pro1, pro2] });
+
+    // For gemini-4-neon, skip the 0%-used PLUS account and pick the least-used PRO account.
+    const neonPick = selectPoolMember({
+      poolId: POOL_ID,
+      pool,
+      providers,
+      cooldownState: EMPTY_POOL_COOLDOWN_STATE,
+      nowMs,
+      model: "gemini-4-neon",
+    });
+    expect(neonPick?.instanceId).toBe(pro2);
+
+    // Switching mid-thread from a sticky PLUS account to a PRO-only model switches away from PLUS.
+    const stickyUpgrade = selectPoolMember({
+      poolId: POOL_ID,
+      pool,
+      providers,
+      cooldownState: EMPTY_POOL_COOLDOWN_STATE,
+      nowMs,
+      model: "gemini-4-neon",
+      preferredInstanceId: plus,
+      respectSticky: true,
+    });
+    expect(stickyUpgrade?.instanceId).toBe(pro2);
+    expect(stickyUpgrade?.switched).toBe(true);
+
+    // Shared models (and aliases) can still use the 0%-used PLUS account.
+    const flashPick = selectPoolMember({
+      poolId: POOL_ID,
+      pool,
+      providers,
+      cooldownState: EMPTY_POOL_COOLDOWN_STATE,
+      nowMs,
+      model: "antigravity-default",
+    });
+    expect(flashPick?.instanceId).toBe(plus);
+
+    // If all PRO accounts are cooling down, return null instead of falling back to PLUS.
+    let allProCooling = recordMemberCooldown(EMPTY_POOL_COOLDOWN_STATE, {
+      instanceId: pro1,
+      untilMs: nowMs + 60_000,
+      reason: "usage_limit",
+      updatedAtMs: nowMs,
+    });
+    allProCooling = recordMemberCooldown(allProCooling, {
+      instanceId: pro2,
+      untilMs: nowMs + 60_000,
+      reason: "usage_limit",
+      updatedAtMs: nowMs,
+    });
+    const noneCompatible = selectPoolMember({
+      poolId: POOL_ID,
+      pool,
+      providers,
+      cooldownState: allProCooling,
+      nowMs,
+      model: "gemini-4-neon",
+    });
+    expect(noneCompatible).toBeNull();
   });
 });

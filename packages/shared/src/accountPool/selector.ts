@@ -39,6 +39,31 @@ export function findPoolForInstance(
   return null;
 }
 
+function providerSupportsModel(
+  provider: Pick<ServerProvider, "models">,
+  model: string | undefined,
+): boolean {
+  const trimmed = model?.trim();
+  if (!trimmed || provider.models.length === 0) return true;
+  return provider.models.some(
+    (entry) => entry.slug === trimmed || (entry.aliases?.includes(trimmed) ?? false),
+  );
+}
+
+export function unionPoolModels(
+  memberModels: ReadonlyArray<ServerProvider["models"]>,
+): ServerProvider["models"] {
+  const bySlug = new Map<string, ServerProvider["models"][number]>();
+  for (const models of memberModels) {
+    for (const model of models) {
+      if (!bySlug.has(model.slug)) {
+        bySlug.set(model.slug, model);
+      }
+    }
+  }
+  return [...bySlug.values()];
+}
+
 function computeMemberQuotaAssessment(input: {
   readonly provider: ServerProvider | undefined;
   readonly instanceId: ProviderInstanceId;
@@ -58,7 +83,8 @@ function computeMemberQuotaAssessment(input: {
     !provider.enabled ||
     !provider.installed ||
     provider.auth.status === "unauthenticated" ||
-    !isProviderAvailable(provider)
+    !isProviderAvailable(provider) ||
+    !providerSupportsModel(provider, model)
   ) {
     return {
       instanceId,

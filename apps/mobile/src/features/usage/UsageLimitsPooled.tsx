@@ -4,6 +4,7 @@ import { EnvironmentId } from "@t3tools/contracts";
 import { providerClients } from "@t3tools/client-runtime/provider-clients";
 import { normalizeProviderAccentColor } from "@t3tools/client-runtime/state/provider-instance-display";
 import {
+  collectConfiguredProviderPools,
   collectLimitAccounts,
   collectLimitPools,
   displayLimitWindows,
@@ -481,7 +482,11 @@ export function UsageLimitsSection({
     selectedEnvironmentIds === null
       ? presentations
       : new Map([...presentations].filter(([id]) => selectedEnvironmentIds.has(id)));
-  const pools = collectLimitPools(collectLimitAccounts(selected), now);
+  const pools = collectLimitPools(
+    collectLimitAccounts(selected),
+    now,
+    collectConfiguredProviderPools(selected),
+  );
   const m = useMessages();
   const notices = collectLimitNotices(selected, m);
   const externalLinks = collectExternalUsageLinks(selected, m);
@@ -502,12 +507,12 @@ export function UsageLimitsSection({
       {pools.map((pool) => {
         const windows = displayLimitWindows(pool);
         return (
-          <Fragment key={pool.driver}>
+          <Fragment key={pool.groupKey ?? pool.driver}>
             <View className="gap-3">
               <View className="flex-row items-center gap-2 px-1">
                 <ProviderIcon provider={pool.driver} size={18} />
                 <Text className="text-base font-t3-medium text-foreground">
-                  {providerClients.get(pool.driver)?.label ?? pool.driver}
+                  {pool.label ?? providerClients.get(pool.driver)?.label ?? pool.driver}
                 </Text>
               </View>
               {windows.map((window) => {

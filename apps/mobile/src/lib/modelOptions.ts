@@ -18,7 +18,7 @@ import {
   isProviderDriverKind,
   resolveProjectProviderInstanceEnabled,
 } from "@t3tools/contracts";
-import { buildPoolRepresentatives } from "@t3tools/shared/accountPool";
+import { buildPoolRepresentatives, unionPoolModels } from "@t3tools/shared/accountPool";
 import {
   buildExplicitProviderOptionSelectionsFromDescriptors,
   getProviderOptionDescriptors,
@@ -429,7 +429,26 @@ export function buildModelOptions(
     const preferences = config?.settings?.providerModelPreferences?.[provider.instanceId];
     const hiddenModels = new Set(preferences?.hiddenModels ?? []);
     const order = new Map((preferences?.modelOrder ?? []).map((slug, index) => [slug, index]));
-    const models = provider.models.filter(
+    const sourceModels = poolSummary
+      ? unionPoolModels([
+          provider.models,
+          ...poolSummary.memberInstanceIds.flatMap((memberId) => {
+            if (memberId === provider.instanceId) return [];
+            const member = config?.providers.find((candidate) => candidate.instanceId === memberId);
+            if (
+              !member ||
+              !isProviderEnabledForProject(config, member, projectId) ||
+              !member.installed ||
+              member.auth.status === "unauthenticated" ||
+              (member.driver === "antigravity" && member.availability === "unavailable")
+            ) {
+              return [];
+            }
+            return [member.models];
+          }),
+        ])
+      : provider.models;
+    const models = sourceModels.filter(
       (model) => includeHidden || model.isCustom || !hiddenModels.has(model.slug),
     );
     if (order.size > 0)

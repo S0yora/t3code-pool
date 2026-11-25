@@ -60,6 +60,12 @@ const STATUS_NOT_FOUND_ERROR = Buffer.concat([
     'NOT_FOUND (code 404): Requested entity was not found.\u001a\u0080\u0001HTTP 404 Not Found\n\n{"error":{"code":404,"message":"Requested entity was not found.","status":"NOT_FOUND"}}',
   ),
 ]);
+const VALIDATION_REQUIRED_ERROR = Buffer.concat([
+  Buffer.from([0x12, 0x3e]),
+  Buffer.from(
+    'PERMISSION_DENIED (code 403): Verify your account to continue.\u001a\u0080\u0001HTTP 403 Forbidden\n\n{"error":{"code":403,"message":"Verify your account to continue.","status":"PERMISSION_DENIED","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"VALIDATION_REQUIRED","metadata":{"validation_url":"https://accounts.google.com/v3/signin/continue?plt=abc123\\u0026continue=https://developers.google.com/gemini-code-assist/auth/auth_success_gemini\\u0026authuser"}}]}}',
+  ),
+]);
 // The model's reply quoting the agent's quota notice is an ordinary planner response.
 const QUOTED_NOTICE = Buffer.from(
   "Usage Limit Reached\n\nYou have reached your current quota for this period. Your limit will reset in 1 hour.",
@@ -157,6 +163,19 @@ describe("watchAntigravityPromptOutcome", () => {
           class: "provider_error",
           message: "Request contains an invalid argument.",
           code: "INVALID_ARGUMENT",
+          retryable: false,
+        }),
+      );
+      assert.deepEqual(
+        yield* turn([
+          [USER_INPUT, input],
+          [ERROR_MESSAGE, VALIDATION_REQUIRED_ERROR],
+        ]),
+        reusable({
+          class: "provider_error",
+          message:
+            "Verify your account to continue.\nhttps://accounts.google.com/v3/signin/continue?plt=abc123&continue=https://developers.google.com/gemini-code-assist/auth/auth_success_gemini&authuser",
+          code: "VALIDATION_REQUIRED",
           retryable: false,
         }),
       );

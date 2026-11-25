@@ -120,4 +120,68 @@ describe("providerInstances pool collapse", () => {
     const visible = entries.filter(isProviderInstancePickerVisible);
     expect(visible.map((e) => e.instanceId)).toEqual([acc1, acc2]);
   });
+
+  it("unions models across ready pool members onto the representative entry", () => {
+    const plus = ProviderInstanceId.make("antigravity_plus");
+    const pro = ProviderInstanceId.make("antigravity_pro");
+    const agyDriver = ProviderDriverKind.make("antigravity");
+    const plusProvider: ServerProvider = {
+      ...makeProvider("antigravity_plus", "antigravity", "ready"),
+      models: [
+        {
+          slug: "gemini-3.8-flash",
+          name: "Gemini 3.8 Flash",
+          isCustom: false,
+          isDefault: true,
+          capabilities: null,
+        },
+      ],
+    };
+    const proProvider: ServerProvider = {
+      ...makeProvider("antigravity_pro", "antigravity", "ready"),
+      models: [
+        {
+          slug: "gemini-4-neon",
+          name: "Gemini 4 Neon",
+          isCustom: false,
+          capabilities: null,
+        },
+        {
+          slug: "gemini-3.8-flash",
+          name: "Gemini 3.8 Flash",
+          isCustom: false,
+          isDefault: true,
+          capabilities: null,
+        },
+      ],
+    };
+    const settings: ServerSettings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      providerInstances: {
+        [plus]: { driver: agyDriver, enabled: true },
+        [pro]: { driver: agyDriver, enabled: true },
+      },
+      providerPools: {
+        [ProviderPoolId.make("agy-pool")]: {
+          driver: agyDriver,
+          displayName: "Antigravity Pool",
+          memberInstanceIds: [plus, pro],
+          strategy: "least_used",
+          autoFailover: true,
+          stickyThread: true,
+          enabled: true,
+        },
+      },
+    };
+
+    const entries = providerInstanceEntriesFor([plusProvider, proProvider], settings, null);
+    const visible = entries.filter(isProviderInstancePickerVisible);
+    expect(visible).toHaveLength(1);
+    expect(visible[0]?.instanceId).toBe(plus);
+    expect(visible[0]?.models.map((m) => m.slug)).toEqual(["gemini-3.8-flash", "gemini-4-neon"]);
+    expect(visible[0]?.snapshot.models.map((m) => m.slug)).toEqual([
+      "gemini-3.8-flash",
+      "gemini-4-neon",
+    ]);
+  });
 });

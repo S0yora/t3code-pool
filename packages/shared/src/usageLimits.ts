@@ -178,6 +178,7 @@ export type LimitPresentations = ReadonlyMap<
     readonly serverConfig: {
       readonly providers: readonly ServerProvider[];
       readonly usageLimitSources?: UsageLimitSourceSnapshots | undefined;
+      readonly settings?: Pick<ServerSettings, "providerPools"> | undefined;
     } | null;
   }
 >;
@@ -308,6 +309,7 @@ export interface LimitAccount {
   readonly email: string | undefined;
   readonly plan: string | undefined;
   readonly accentColor: string | undefined;
+  readonly instanceIds?: ReadonlyArray<ProviderInstanceId> | undefined;
   readonly environments: ReadonlyArray<{
     readonly environmentId: EnvironmentId;
     readonly label: string;
@@ -371,6 +373,9 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
       (account) => account.environments.length === 0 && account.email,
     );
     const displayName = previous.displayName ?? next.displayName;
+    const instanceIds = [
+      ...new Set([...(previous.instanceIds ?? []), ...(next.instanceIds ?? [])]),
+    ];
     accounts.set(key, {
       ...previous,
       displayName:
@@ -380,6 +385,7 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
           : displayName,
       plan: planSources.get(key)?.plan ?? previous.plan ?? next.plan,
       accentColor: previous.accentColor ?? next.accentColor,
+      ...(instanceIds.length > 0 ? { instanceIds } : {}),
       environments,
       sourceLabel: environments.length > 0 ? null : (previous.sourceLabel ?? next.sourceLabel),
       redeem:
@@ -405,6 +411,7 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
         email: provider.auth.email,
         plan: provider.auth.label,
         accentColor: provider.accentColor,
+        instanceIds: [provider.instanceId],
         environments: [{ environmentId, label }],
         sourceLabel: null,
         redeem: { environmentId, input: { instanceId: provider.instanceId } },
@@ -510,6 +517,9 @@ export interface LimitPoolWindow {
 
 export interface LimitPool {
   readonly driver: ServerProvider["driver"];
+  readonly groupKey?: string | undefined;
+  readonly label?: string | undefined;
+  readonly accentColor?: string | undefined;
   readonly accounts: readonly LimitAccount[];
   readonly windows: readonly LimitPoolWindow[];
 }
@@ -561,9 +571,76 @@ const WINDOW_KIND_ORDER: Record<ServerProviderUsageWindow["kind"], number> = {
   other: 3,
 };
 
+export type ConfiguredLimitProviderPools = NonNullable<ServerSettings["providerPools"]>;
+
+export function collectConfiguredProviderPools(
+  presentations: LimitPresentations,
+): ConfiguredLimitProviderPools {
+  const merged: Record<string, ConfiguredLimitProviderPools[keyof ConfiguredLimitProviderPools]> =
+    {};
+  for (const presentation of presentations.values()) {
+    const pools = presentation.serverConfig?.settings?.providerPools;
+    if (!pools) continue;
+    for (const [poolId, pool] of Object.entries(pools)) {
+      if (!pool.enabled) continue;
+      const existing = merged[poolId];
+      if (!existing) {
+        merged[poolId] = pool;
+      } else {
+        merged[poolId] = {
+          ...existing,
+          memberInstanceIds: [
+            ...new Set([...existing.memberInstanceIds, ...pool.memberInstanceIds]),
+          ],
+        };
+      }
+    }
+  }
+  return merged as ConfiguredLimitProviderPools;
+}
+
+function buildLimitPool(
+  driver: ServerProvider["driver"],
+  members: readonly LimitAccount[],
+  now: number,
+  meta?: {
+    readonly groupKey?: string | undefined;
+    readonly label?: string | undefined;
+    readonly accentColor?: string | undefined;
+  },
+): LimitPool {
+  const orderWindow = members
+    .flatMap((account) => account.limits.windows)
+    .sort((left, right) => WINDOW_KIND_ORDER[left.kind] - WINDOW_KIND_ORDER[right.kind])[0];
+  const orderReset = (account: LimitAccount) => {
+    const window = account.limits.windows.find(
+      (window) => orderWindow && poolKey(driver, window) === poolKey(driver, orderWindow),
+    );
+    return (
+      (window ? resetMillis(poolMember(account, window, now).window) : null) ??
+      Number.POSITIVE_INFINITY
+    );
+  };
+  const sorted = [...members].sort(
+    (left, right) =>
+      orderReset(left) - orderReset(right) ||
+      accountSortName(left).localeCompare(accountSortName(right)) ||
+      left.key.localeCompare(right.key),
+  );
+  return {
+    driver,
+    ...(meta?.groupKey !== undefined ? { groupKey: meta.groupKey } : {}),
+    ...(meta?.label !== undefined ? { label: meta.label } : {}),
+    ...(meta?.accentColor !== undefined ? { accentColor: meta.accentColor } : {}),
+    accounts: sorted,
+    windows: poolWindows(sorted, now),
+  };
+}
+
 export function collectLimitPools(
   accounts: readonly LimitAccount[],
   now: number,
+  configuredPools?: ConfiguredLimitProviderPools | undefined,
 ): readonly LimitPool[] {
   const byDriver = new Map<ServerProvider["driver"], LimitAccount[]>();
   for (const account of accounts) {
@@ -571,27 +648,52 @@ export function collectLimitPools(
     if (list) list.push(account);
     else byDriver.set(account.driver, [account]);
   }
-  return [...byDriver].map(([driver, members]) => {
-    const orderWindow = members
-      .flatMap((account) => account.limits.windows)
-      .sort((left, right) => WINDOW_KIND_ORDER[left.kind] - WINDOW_KIND_ORDER[right.kind])[0];
-    const orderReset = (account: LimitAccount) => {
-      const window = account.limits.windows.find(
-        (window) => orderWindow && poolKey(driver, window) === poolKey(driver, orderWindow),
+  const enabledConfiguredPools = configuredPools
+    ? Object.entries(configuredPools).filter(([, pool]) => pool.enabled)
+    : [];
+
+  const result: LimitPool[] = [];
+  for (const [driver, members] of byDriver) {
+    const driverPools = enabledConfiguredPools.filter(([, pool]) => pool.driver === driver);
+    if (driverPools.length === 0) {
+      result.push(buildLimitPool(driver, members, now));
+      continue;
+    }
+
+    const assignedKeys = new Set<string>();
+    let matchedPoolCount = 0;
+    for (const [poolId, pool] of driverPools) {
+      const memberSet = new Set(pool.memberInstanceIds);
+      const matched = members.filter(
+        (account) =>
+          !assignedKeys.has(account.key) &&
+          (account.instanceIds?.some((instanceId) => memberSet.has(instanceId)) ?? false),
       );
-      return (
-        (window ? resetMillis(poolMember(account, window, now).window) : null) ??
-        Number.POSITIVE_INFINITY
+      if (matched.length === 0) continue;
+      matchedPoolCount += 1;
+      for (const account of matched) assignedKeys.add(account.key);
+      result.push(
+        buildLimitPool(driver, matched, now, {
+          groupKey: `pool:${poolId}`,
+          label: pool.displayName,
+          accentColor: pool.accentColor,
+        }),
       );
-    };
-    const sorted = [...members].sort(
-      (left, right) =>
-        orderReset(left) - orderReset(right) ||
-        accountSortName(left).localeCompare(accountSortName(right)) ||
-        left.key.localeCompare(right.key),
-    );
-    return { driver, accounts: sorted, windows: poolWindows(sorted, now) };
-  });
+    }
+
+    const unpooled = members.filter((account) => !assignedKeys.has(account.key));
+    if (unpooled.length > 0) {
+      result.push(
+        buildLimitPool(
+          driver,
+          unpooled,
+          now,
+          matchedPoolCount > 0 ? { groupKey: `driver:${driver}:unpooled` } : undefined,
+        ),
+      );
+    }
+  }
+  return result;
 }
 
 function accountSortName(account: LimitAccount): string {

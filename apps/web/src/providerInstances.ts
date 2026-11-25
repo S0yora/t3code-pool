@@ -1,4 +1,5 @@
 import { pipe } from "effect/Function";
+import { unionPoolModels } from "@t3tools/shared/accountPool";
 import {
   DEFAULT_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
@@ -171,6 +172,7 @@ function applyProviderPoolCollapse(
       readonly memberCount: number;
       readonly readyCount: number;
       readonly hidden: boolean;
+      readonly mergedModels: ReadonlyArray<ServerProviderModel>;
     }
   >();
 
@@ -181,12 +183,16 @@ function applyProviderPoolCollapse(
       .filter((entry): entry is ProviderInstanceEntry => entry !== undefined);
     if (memberEntries.length === 0) continue;
 
+    const readyMembers = memberEntries.filter(isProviderInstancePickerReady);
     const representative =
-      memberEntries.find(isProviderInstancePickerReady) ??
-      memberEntries.find((entry) => entry.enabled) ??
-      memberEntries[0]!;
-    const readyCount = memberEntries.filter(isProviderInstancePickerReady).length;
+      readyMembers[0] ?? memberEntries.find((entry) => entry.enabled) ?? memberEntries[0]!;
+    const readyCount = readyMembers.length;
     const poolAccent = normalizeProviderAccentColor(pool.accentColor);
+    const modelSources = readyMembers.length > 0 ? readyMembers : memberEntries;
+    const mergedModels = unionPoolModels([
+      representative.models,
+      ...modelSources.map((member) => member.models),
+    ]);
 
     for (const member of memberEntries) {
       if (metaByInstanceId.has(member.instanceId)) continue;
@@ -198,6 +204,7 @@ function applyProviderPoolCollapse(
         memberCount: memberEntries.length,
         readyCount,
         hidden: member.instanceId !== representative.instanceId,
+        mergedModels,
       });
     }
   }
@@ -211,6 +218,8 @@ function applyProviderPoolCollapse(
       ...entry,
       displayName: meta.hidden ? entry.displayName : meta.poolDisplayName,
       accentColor: meta.hidden ? entry.accentColor : (meta.accentColor ?? entry.accentColor),
+      models: meta.hidden ? entry.models : meta.mergedModels,
+      snapshot: meta.hidden ? entry.snapshot : { ...entry.snapshot, models: meta.mergedModels },
       poolId: meta.poolId,
       poolDisplayName: meta.poolDisplayName,
       poolRepresentativeId: meta.representativeId,
