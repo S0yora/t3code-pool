@@ -337,129 +337,131 @@ describe("ProviderPoolService", () => {
     expect(winCfg?.homePath).toBeUndefined();
   });
 
-  it.effect("pushes and pulls Antigravity OAuth profile files through the encrypted hub vault", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const digest = yield* Digest.Digest;
-      const sourceStateDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pool-src-" });
-      const targetStateDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pool-dst-" });
+  it.effect(
+    "pushes and pulls Antigravity OAuth profile files through the encrypted hub vault",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const digest = yield* Digest.Digest;
+        const sourceStateDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pool-src-" });
+        const targetStateDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pool-dst-" });
 
-      const agyId = "antigravity" as ProviderInstanceId;
-      const agyDriver = ProviderDriverKind.make("antigravity");
-      const poolId = ProviderPoolId.make("antigravity-pool");
+        const agyId = "antigravity" as ProviderInstanceId;
+        const agyDriver = ProviderDriverKind.make("antigravity");
+        const poolId = ProviderPoolId.make("antigravity-pool");
 
-      const sourceDirs = yield* resolveAntigravityInstanceDirectories(sourceStateDir, agyId);
-      const sourceAcpDir = path.join(sourceDirs.profile, "antigravity-acp");
-      yield* fs.makeDirectory(sourceAcpDir, { recursive: true });
-      const oauthTokenContent = '{"access_token":"tok-123","email":"user@example.com"}';
-      const installIdContent = "11111111-2222-3333-4444-555555555555";
-      yield* fs.writeFileString(
-        path.join(sourceAcpDir, "antigravity-oauth-token"),
-        oauthTokenContent,
-      );
-      yield* fs.writeFileString(path.join(sourceAcpDir, "installation_id"), installIdContent);
+        const sourceDirs = yield* resolveAntigravityInstanceDirectories(sourceStateDir, agyId);
+        const sourceAcpDir = path.join(sourceDirs.profile, "antigravity-acp");
+        yield* fs.makeDirectory(sourceAcpDir, { recursive: true });
+        const oauthTokenContent = '{"access_token":"tok-123","email":"user@example.com"}';
+        const installIdContent = "11111111-2222-3333-4444-555555555555";
+        yield* fs.writeFileString(
+          path.join(sourceAcpDir, "antigravity-oauth-token"),
+          oauthTokenContent,
+        );
+        yield* fs.writeFileString(path.join(sourceAcpDir, "installation_id"), installIdContent);
 
-      const baseSync = {
-        enabled: true,
-        mode: "hub" as const,
-        hubUrl: "",
-        syncToken: "test-token",
-        syncPassphrase: "strong-vault-passphrase",
-        syncCredentials: true,
-        pollIntervalSeconds: 15,
-      };
-      const sourceSettings: ServerSettings = {
-        ...DEFAULT_SERVER_SETTINGS,
-        providerInstances: {
-          [agyId]: { driver: agyDriver, displayName: "Main AGY", enabled: true },
-        },
-        providerPools: {
-          [poolId]: {
-            driver: agyDriver,
-            displayName: "Antigravity Pool",
-            enabled: true,
-            memberInstanceIds: [agyId],
-            strategy: "least_used",
-            autoFailover: true,
-            stickyThread: true,
+        const baseSync = {
+          enabled: true,
+          mode: "hub" as const,
+          hubUrl: "",
+          syncToken: "test-token",
+          syncPassphrase: "strong-vault-passphrase",
+          syncCredentials: true,
+          pollIntervalSeconds: 15,
+        };
+        const sourceSettings: ServerSettings = {
+          ...DEFAULT_SERVER_SETTINGS,
+          providerInstances: {
+            [agyId]: { driver: agyDriver, displayName: "Main AGY", enabled: true },
           },
-        },
-        providerPoolSync: baseSync,
-      };
+          providerPools: {
+            [poolId]: {
+              driver: agyDriver,
+              displayName: "Antigravity Pool",
+              enabled: true,
+              memberInstanceIds: [agyId],
+              strategy: "least_used",
+              autoFailover: true,
+              stickyThread: true,
+            },
+          },
+          providerPoolSync: baseSync,
+        };
 
-      const makeStatefulLayer = (stateDir: string, initial: ServerSettings) => {
-        let current = initial;
-        const settingsLayer = Layer.succeed(ServerSettingsModule.ServerSettingsService, {
-          start: Effect.void,
-          ready: Effect.void,
-          getSettings: Effect.sync(() => current),
-          updateSettings: (patch: Partial<ServerSettings>) =>
-            Effect.sync(() => {
-              current = { ...current, ...patch };
-              return current;
-            }),
-          updateProviderInstance: () => Effect.sync(() => current),
-          streamChanges: Stream.empty,
-          subscribeChanges: Effect.succeed(Stream.empty),
-          withSettingsSnapshot: <A, E, R>(
-            use: (snapshot: ServerSettings) => Effect.Effect<A, E, R>,
-          ) => use(current),
-        } as unknown as ServerSettingsModule.ServerSettingsService["Service"]);
-        const registryLayer = Layer.succeed(ProviderRegistry.ProviderRegistry, {
-          getProviders: Effect.succeed([]),
-          refresh: () => Effect.succeed([]),
-          streamChanges: Stream.empty,
-        } as unknown as ProviderRegistry.ProviderRegistry["Service"]);
-        const configLayer = Layer.succeed(ServerConfig.ServerConfig, {
-          stateDir,
-        } as unknown as ServerConfig.ServerConfig["Service"]);
-        const randomLayer = Layer.succeed(
-          SecureRandom.SecureRandom,
-          SecureRandom.make((size) => new Uint8Array(size).fill(9)),
+        const makeStatefulLayer = (stateDir: string, initial: ServerSettings) => {
+          let current = initial;
+          const settingsLayer = Layer.succeed(ServerSettingsModule.ServerSettingsService, {
+            start: Effect.void,
+            ready: Effect.void,
+            getSettings: Effect.sync(() => current),
+            updateSettings: (patch: Partial<ServerSettings>) =>
+              Effect.sync(() => {
+                current = { ...current, ...patch };
+                return current;
+              }),
+            updateProviderInstance: () => Effect.sync(() => current),
+            streamChanges: Stream.empty,
+            subscribeChanges: Effect.succeed(Stream.empty),
+            withSettingsSnapshot: <A, E, R>(
+              use: (snapshot: ServerSettings) => Effect.Effect<A, E, R>,
+            ) => use(current),
+          } as unknown as ServerSettingsModule.ServerSettingsService["Service"]);
+          const registryLayer = Layer.succeed(ProviderRegistry.ProviderRegistry, {
+            getProviders: Effect.succeed([]),
+            refresh: () => Effect.succeed([]),
+            streamChanges: Stream.empty,
+          } as unknown as ProviderRegistry.ProviderRegistry["Service"]);
+          const configLayer = Layer.succeed(ServerConfig.ServerConfig, {
+            stateDir,
+          } as unknown as ServerConfig.ServerConfig["Service"]);
+          const randomLayer = Layer.succeed(
+            SecureRandom.SecureRandom,
+            SecureRandom.make((size) => new Uint8Array(size).fill(9)),
+          );
+          return ProviderPoolService.layer.pipe(
+            Layer.provide(settingsLayer),
+            Layer.provide(registryLayer),
+            Layer.provide(configLayer),
+            Layer.provide(randomLayer),
+            Layer.provide(Layer.succeed(Digest.Digest, digest)),
+            Layer.provide(NodeServices.layer),
+          );
+        };
+
+        // 1. Push on source machine -> produces encrypted bundle with Antigravity profile files.
+        const exportedBundle = yield* Effect.gen(function* () {
+          const svc = yield* ProviderPoolService.ProviderPoolService;
+          const pushed = yield* svc.pushEncryptedBundle;
+          expect(pushed.ok).toBe(true);
+          expect(pushed.detail).toContain("2 credential(s)");
+          return yield* svc.getEncryptedBundle;
+        }).pipe(Effect.provide(makeStatefulLayer(sourceStateDir, sourceSettings)));
+        expect(exportedBundle).not.toBeNull();
+
+        // 2. Put & pull on target machine -> restores Antigravity OAuth token & installation_id.
+        const targetSettings: ServerSettings = {
+          ...DEFAULT_SERVER_SETTINGS,
+          providerPoolSync: { ...baseSync, enabled: false },
+        };
+        yield* Effect.gen(function* () {
+          const svc = yield* ProviderPoolService.ProviderPoolService;
+          yield* svc.putEncryptedBundle(exportedBundle!);
+          const pulled = yield* svc.pullEncryptedBundle;
+          expect(pulled.ok).toBe(true);
+          expect(pulled.detail).toContain("2 credential(s)");
+        }).pipe(Effect.provide(makeStatefulLayer(targetStateDir, targetSettings)));
+
+        const targetDirs = yield* resolveAntigravityInstanceDirectories(targetStateDir, agyId);
+        const restoredToken = yield* fs.readFileString(
+          path.join(targetDirs.profile, "antigravity-acp", "antigravity-oauth-token"),
         );
-        return ProviderPoolService.layer.pipe(
-          Layer.provide(settingsLayer),
-          Layer.provide(registryLayer),
-          Layer.provide(configLayer),
-          Layer.provide(randomLayer),
-          Layer.provide(Layer.succeed(Digest.Digest, digest)),
-          Layer.provide(NodeServices.layer),
+        const restoredInstallId = yield* fs.readFileString(
+          path.join(targetDirs.profile, "antigravity-acp", "installation_id"),
         );
-      };
-
-      // 1. Push on source machine -> produces encrypted bundle with Antigravity profile files.
-      const exportedBundle = yield* Effect.gen(function* () {
-        const svc = yield* ProviderPoolService.ProviderPoolService;
-        const pushed = yield* svc.pushEncryptedBundle;
-        expect(pushed.ok).toBe(true);
-        expect(pushed.detail).toContain("2 credential(s)");
-        return yield* svc.getEncryptedBundle;
-      }).pipe(Effect.provide(makeStatefulLayer(sourceStateDir, sourceSettings)));
-      expect(exportedBundle).not.toBeNull();
-
-      // 2. Put & pull on target machine -> restores Antigravity OAuth token & installation_id.
-      const targetSettings: ServerSettings = {
-        ...DEFAULT_SERVER_SETTINGS,
-        providerPoolSync: { ...baseSync, enabled: false },
-      };
-      yield* Effect.gen(function* () {
-        const svc = yield* ProviderPoolService.ProviderPoolService;
-        yield* svc.putEncryptedBundle(exportedBundle!);
-        const pulled = yield* svc.pullEncryptedBundle;
-        expect(pulled.ok).toBe(true);
-        expect(pulled.detail).toContain("2 credential(s)");
-      }).pipe(Effect.provide(makeStatefulLayer(targetStateDir, targetSettings)));
-
-      const targetDirs = yield* resolveAntigravityInstanceDirectories(targetStateDir, agyId);
-      const restoredToken = yield* fs.readFileString(
-        path.join(targetDirs.profile, "antigravity-acp", "antigravity-oauth-token"),
-      );
-      const restoredInstallId = yield* fs.readFileString(
-        path.join(targetDirs.profile, "antigravity-acp", "installation_id"),
-      );
-      expect(restoredToken).toBe(oauthTokenContent);
-      expect(restoredInstallId).toBe(installIdContent);
-    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, Digest.layerWebCrypto))),
+        expect(restoredToken).toBe(oauthTokenContent);
+        expect(restoredInstallId).toBe(installIdContent);
+      }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, Digest.layerWebCrypto))),
   );
 });

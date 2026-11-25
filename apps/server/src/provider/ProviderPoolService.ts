@@ -379,10 +379,7 @@ const make = Effect.gen(function* () {
       ),
     );
     const remoteBundleAt = responseResult.success.bundleUpdatedAtMs;
-    if (
-      remoteBundleAt !== null &&
-      settingsSecretLiteral(sync.syncPassphrase).trim().length > 0
-    ) {
+    if (remoteBundleAt !== null && settingsSecretLiteral(sync.syncPassphrase).trim().length > 0) {
       const lastApplied = yield* Ref.get(lastAppliedBundleAtRef);
       if (lastApplied === null || remoteBundleAt > lastApplied) {
         yield* triggerAutoPull();
@@ -492,7 +489,10 @@ const make = Effect.gen(function* () {
         yield* fs.makeDirectory(path.dirname(targetPath), { recursive: true }).pipe(Effect.ignore);
         const written = yield* fs
           .writeFile(targetPath, new Uint8Array(Buffer.from(file.valueBase64, "base64")))
-          .pipe(Effect.as(true), Effect.orElseSucceed(() => false));
+          .pipe(
+            Effect.as(true),
+            Effect.orElseSucceed(() => false),
+          );
         if (written) {
           if (platform !== "win32") {
             yield* fs.chmod(targetPath, 0o600).pipe(Effect.ignore);
