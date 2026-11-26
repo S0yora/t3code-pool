@@ -7,6 +7,7 @@ import {
   fetchDirectSnapshotMeta,
   getDirectAutoSyncEnabled,
   getLastSyncedFingerprint,
+  type PreparedEnvironmentConnection,
   setLastSyncedFingerprint,
   subscribeDirectAutoSyncEnabled,
   syncProvidersBetweenEnvironments,
@@ -18,6 +19,48 @@ import { readEnvironmentScope, readPreparedConnection } from "../../state/sessio
 import { toastManager } from "../ui/toast";
 
 const AUTO_SYNC_INTERVAL_MS = 60_000;
+
+async function syncSingleHubToLocal(input: {
+  readonly hubEnvId: EnvironmentId;
+  readonly localEnvironmentId: EnvironmentId;
+  readonly hubPrepared: PreparedEnvironmentConnection;
+  readonly localPrepared: PreparedEnvironmentConnection;
+  readonly localPoolCount: number;
+  readonly localAccountCount: number;
+  readonly inFlightPairs: Set<string>;
+}): Promise<{ readonly source: string; readonly detail: string } | null> {
+  const pairKey = `${input.hubEnvId}->${input.localEnvironmentId}`;
+  if (input.inFlightPairs.has(pairKey)) return null;
+  input.inFlightPairs.add(pairKey);
+  try {
+    const meta = await fetchDirectSnapshotMeta(input.hubPrepared);
+    if (!meta || !meta.hasSyncableData) return null;
+
+    const lastApplied = getLastSyncedFingerprint(input.hubEnvId, input.localEnvironmentId);
+    const localLooksEmpty =
+      (input.localPoolCount === 0 && meta.poolCount > 0) ||
+      (input.localAccountCount === 0 && meta.accountCount > 0);
+
+    if (lastApplied === meta.fingerprint && !localLooksEmpty) {
+      return null;
+    }
+
+    const result = await syncProvidersBetweenEnvironments(input.hubPrepared, input.localPrepared);
+    if (!result.ok) return null;
+
+    setLastSyncedFingerprint(
+      input.hubEnvId,
+      input.localEnvironmentId,
+      result.fingerprint ?? meta.fingerprint,
+    );
+    return {
+      source: readEnvironment(input.hubEnvId)?.label ?? "Hub",
+      detail: result.detail,
+    };
+  } finally {
+    input.inFlightPairs.delete(pairKey);
+  }
+}
 
 /**
  * Automatically pulls provider accounts, pools, and OAuth/Codex credentials from a connected
@@ -64,55 +107,36 @@ export function PoolConnectSyncCoordinator() {
     const localPrepared = readPreparedConnection(localEnvironmentId);
     if (!localPrepared) return;
 
-    const hubCandidates: Array<EnvironmentId> = [];
+    const localPoolCount = Object.keys(localConfig.settings.providerPools ?? {}).length;
+    const localAccountCount = Object.keys(localConfig.settings.providerInstances ?? {}).length;
+
     for (const envId of connectedEnvironmentIds) {
       if (envId === localEnvironmentId) continue;
       if (!readEnvironmentScope(envId, AuthProvidersManageScope)) continue;
       const cfg = serverConfigsByEnv.get(envId);
-      if (cfg?.settings.providerPoolSync.enabled && cfg.settings.providerPoolSync.mode === "hub") {
-        hubCandidates.push(envId);
+      if (
+        !(cfg?.settings.providerPoolSync.enabled && cfg.settings.providerPoolSync.mode === "hub")
+      ) {
+        continue;
       }
-    }
-
-    for (const hubEnvId of hubCandidates) {
-      const pairKey = `${hubEnvId}->${localEnvironmentId}`;
-      if (inFlightPairsRef.current.has(pairKey)) continue;
-
-      const hubPrepared = readPreparedConnection(hubEnvId);
+      const hubPrepared = readPreparedConnection(envId);
       if (!hubPrepared) continue;
 
-      inFlightPairsRef.current.add(pairKey);
-      try {
-        const meta = await fetchDirectSnapshotMeta(hubPrepared);
-        if (!meta || !meta.hasSyncableData) continue;
-
-        const lastApplied = getLastSyncedFingerprint(hubEnvId, localEnvironmentId);
-        const localPoolCount = Object.keys(localConfig.settings.providerPools ?? {}).length;
-        const localAccountCount = Object.keys(localConfig.settings.providerInstances ?? {}).length;
-        const localLooksEmpty =
-          (localPoolCount === 0 && meta.poolCount > 0) ||
-          (localAccountCount === 0 && meta.accountCount > 0);
-
-        if (lastApplied === meta.fingerprint && !localLooksEmpty) {
-          continue;
-        }
-
-        const result = await syncProvidersBetweenEnvironments(hubPrepared, localPrepared);
-        if (result.ok) {
-          setLastSyncedFingerprint(
-            hubEnvId,
-            localEnvironmentId,
-            result.fingerprint ?? meta.fingerprint,
-          );
-          const hubLabel = readEnvironment(hubEnvId)?.label ?? "Hub";
-          toastManager.add({
-            type: "success",
-            title: gt("Synced providers from {source}", { source: hubLabel }),
-            description: result.detail,
-          });
-        }
-      } finally {
-        inFlightPairsRef.current.delete(pairKey);
+      const synced = await syncSingleHubToLocal({
+        hubEnvId: envId,
+        localEnvironmentId,
+        hubPrepared,
+        localPrepared,
+        localPoolCount,
+        localAccountCount,
+        inFlightPairs: inFlightPairsRef.current,
+      });
+      if (synced) {
+        toastManager.add({
+          type: "success",
+          title: gt("Synced providers from {source}", { source: synced.source }),
+          description: synced.detail,
+        });
       }
     }
   });
