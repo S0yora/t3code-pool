@@ -657,7 +657,7 @@ jobs:
   desktop_mac_arm64:
     name: Desktop macOS arm64
     needs: [preflight, relay_public_config, build_bundle]
-    if: ${{ !cancelled() && needs.preflight.result == 'success' && needs.relay_public_config.result == 'success' && needs.build_bundle.result == 'success' }}
+    if: ${{ github.repository == 'pingdotgg/t3code' && !cancelled() && needs.preflight.result == 'success' && needs.relay_public_config.result == 'success' && needs.build_bundle.result == 'success' }}
     uses: ./.github/workflows/release-desktop.yml
     secrets: inherit
     with:
@@ -684,7 +684,7 @@ jobs:
   desktop_mac_x64:
     name: Desktop macOS x64
     needs: [preflight, relay_public_config, build_bundle]
-    if: ${{ !cancelled() && needs.preflight.result == 'success' && needs.relay_public_config.result == 'success' && needs.build_bundle.result == 'success' }}
+    if: ${{ github.repository == 'pingdotgg/t3code' && !cancelled() && needs.preflight.result == 'success' && needs.relay_public_config.result == 'success' && needs.build_bundle.result == 'success' }}
     uses: ./.github/workflows/release-desktop.yml
     secrets: inherit
     with:
@@ -970,7 +970,7 @@ jobs:
         desktop_win_arm64,
         android_apk,
       ]
-    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.relay_public_config.result == 'success' && needs.quality.result == 'success' && needs.test.result == 'success' && needs.test_web.result == 'success' && needs.test_server.result == 'success' && needs.desktop_mac_arm64.result == 'success' && needs.desktop_mac_x64.result == 'success' && needs.desktop_linux_x64.result == 'success' && needs.desktop_linux_arm64.result == 'success' && needs.desktop_win_x64.result == 'success' && needs.desktop_win_arm64.result == 'success' && needs.android_apk.result == 'success' }}
+    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.relay_public_config.result == 'success' && needs.quality.result == 'success' && needs.test.result == 'success' && needs.test_web.result == 'success' && needs.test_server.result == 'success' && (needs.desktop_mac_arm64.result == 'success' || (github.repository == 'S0yora/t3code-pool' && needs.desktop_mac_arm64.result == 'skipped')) && (needs.desktop_mac_x64.result == 'success' || (github.repository == 'S0yora/t3code-pool' && needs.desktop_mac_x64.result == 'skipped')) && needs.desktop_linux_x64.result == 'success' && needs.desktop_linux_arm64.result == 'success' && needs.desktop_win_x64.result == 'success' && needs.desktop_win_arm64.result == 'success' && needs.android_apk.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -1076,7 +1076,27 @@ jobs:
       # merging it, so a successful release can never strand one architecture.
       - name: Merge desktop updater manifests
         if: needs.preflight.outputs.release_channel != 'preview'
-        run: node scripts/merge-release-update-manifests.ts release-assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.repository }}" == "pingdotgg/t3code" ]]; then
+            node scripts/merge-release-update-manifests.ts release-assets
+          else
+            if [[ -f release-assets/latest-win-x64.yml && -f release-assets/latest-win-arm64.yml ]]; then
+              node scripts/merge-update-manifests.ts --platform win \
+                release-assets/latest-win-x64.yml \
+                release-assets/latest-win-arm64.yml \
+                release-assets/latest.yml
+              rm -f release-assets/latest-win-x64.yml release-assets/latest-win-arm64.yml
+            fi
+            if [[ -f release-assets/latest-mac.yml && -f release-assets/latest-mac-x64.yml ]]; then
+              node scripts/merge-update-manifests.ts --platform mac \
+                release-assets/latest-mac.yml \
+                release-assets/latest-mac-x64.yml \
+                release-assets/latest-mac.yml
+              rm -f release-assets/latest-mac-x64.yml
+            fi
+          fi
 
       # Updater manifests and blockmaps are what electron-updater consumes.
       # They are only listed for channels an updater is meant to follow.
@@ -1084,19 +1104,18 @@ jobs:
         name: Resolve release asset list
         shell: bash
         run: |
+          shopt -s nullglob
           {
             echo 'files<<EOF'
-            echo 'release-assets/*.dmg'
-            echo 'release-assets/*.zip'
-            echo 'release-assets/*.AppImage'
-            echo 'release-assets/*.deb'
-            echo 'release-assets/*.exe'
+            for f in release-assets/*.dmg release-assets/*.zip release-assets/*.AppImage release-assets/*.deb release-assets/*.exe release-assets/*.tar.gz release-assets/*.apk; do
+              echo "$f"
+            done
             if [[ "${{ needs.preflight.outputs.release_channel }}" != "preview" ]]; then
-              echo 'release-assets/*.blockmap'
-              echo 'release-assets/*.yml'
+              for f in release-assets/*.blockmap release-assets/*.yml; do
+                [[ "$(basename "$f")" == builder-debug* ]] && continue
+                echo "$f"
+              done
             fi
-            echo 'release-assets/*.tar.gz'
-            echo 'release-assets/*.apk'
             # A failed or timed-out fetch can leave partial bytes, so list the APK
             # only when this attempt's fetch succeeded and Play had one ready.
             if [[ "${{ steps.android_apk.outcome }}" == "success" ]]; then
