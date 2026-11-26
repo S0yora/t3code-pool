@@ -9,12 +9,14 @@ import {
 import * as Result from "effect/Result";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
-import { FetchHttpClient, type HttpMethod } from "effect/http";
+import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpMethod } from "effect/http";
+import type { Atom } from "effect/reactivity";
 
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import type { PreparedConnection, PreparedHttpAuthorization } from "../connection/model.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import * as ManagedRelay from "../relay/managedRelay.ts";
+import { createRuntimeCommand } from "./runtime.ts";
 import {
   executeEnvironmentHttpRequest,
   makeEnvironmentHttpApiGroupClient,
@@ -284,3 +286,143 @@ const executeEnvironmentRequest = Effect.fnUntraced(function* <
     }),
   );
 });
+
+export interface AuthenticatedRawFetchInput {
+  readonly prepared: Pick<
+    PreparedConnection,
+    "environmentId" | "httpBaseUrl" | "httpAuthorization" | "target"
+  >;
+  readonly path: string;
+  readonly method: HttpMethod.HttpMethod;
+  readonly body?: string | undefined;
+  readonly timeoutMs?: number | undefined;
+}
+
+export interface AuthenticatedRawFetchResult {
+  readonly ok: boolean;
+  readonly status: number;
+  readonly text: string;
+}
+
+/**
+ * Executes a raw JSON/text HTTP request against a connected environment using the same
+ * Bearer, Cookie, or DPoP (with proof signing and single 401 refresh retry) authorization
+ * used by typed environment HTTP API calls.
+ */
+export const executeAuthenticatedEnvironmentRawFetch = Effect.fn(
+  "environmentHttpAuth.executeAuthenticatedEnvironmentRawFetch",
+)(function* (input: AuthenticatedRawFetchInput) {
+  const httpClient = yield* HttpClient.HttpClient;
+  const signer = yield* Effect.serviceOption(ManagedRelay.ManagedRelayDpopSigner);
+  const remote = yield* Effect.serviceOption(
+    RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization,
+  );
+  let httpBaseUrl = input.prepared.httpBaseUrl;
+  let rejectedAccessToken: string | undefined;
+  const normalizedPath = input.path.startsWith("/") ? input.path : `/${input.path}`;
+
+  for (;;) {
+    let authorization = input.prepared.httpAuthorization;
+    if (authorization?._tag === "Dpop") {
+      if (Option.isNone(remote)) {
+        return yield* new RemoteEnvironmentAuthFetchError({
+          ...translatableMessage(
+            msg("No relay authorization service is available for the environment request."),
+          ),
+          cause: input.prepared.target._tag,
+        });
+      }
+      const authFetchError = (cause: unknown) =>
+        new RemoteEnvironmentAuthFetchError({
+          ...translatableMessage(msg("Could not authorize the environment request.")),
+          cause,
+        });
+      const direct = authorization.directConnection;
+      if (direct !== undefined) {
+        authorization = yield* remote.value
+          .authorizeDirectDpopHttp(direct, rejectedAccessToken)
+          .pipe(Effect.mapError(authFetchError));
+      } else {
+        const current = yield* remote.value
+          .authorizeDpopHttp({
+            expectedEnvironmentId: input.prepared.environmentId,
+            ...(rejectedAccessToken === undefined ? {} : { rejectedAccessToken }),
+          })
+          .pipe(Effect.mapError(authFetchError));
+        if (input.prepared.target._tag === "RelayConnectionTarget") {
+          httpBaseUrl = current.httpBaseUrl;
+        }
+        authorization = current.httpAuthorization;
+      }
+    }
+
+    const requestUrl = `${httpBaseUrl.replace(/\/+$/, "")}${normalizedPath}`;
+    const authHeaders = yield* buildEnvironmentAuthHeaders(
+      authorization,
+      input.method,
+      requestUrl,
+      signer,
+    );
+    let request = HttpClientRequest.make(input.method)(requestUrl);
+    if (authHeaders.authorization) {
+      request = HttpClientRequest.setHeader(request, "Authorization", authHeaders.authorization);
+    }
+    if (authHeaders.dpop) {
+      request = HttpClientRequest.setHeader(request, "DPoP", authHeaders.dpop);
+    }
+    if (input.body !== undefined) {
+      request = HttpClientRequest.bodyText(request, input.body, "application/json");
+    }
+
+    const response = yield* withEnvironmentRequestInit(
+      authorization,
+      undefined,
+      httpClient.execute(request).pipe(
+        Effect.flatMap((res) =>
+          res.text.pipe(
+            Effect.orElseSucceed(() => ""),
+            Effect.map((text): AuthenticatedRawFetchResult => ({
+              ok: res.status >= 200 && res.status < 300,
+              status: res.status,
+              text,
+            })),
+          ),
+        ),
+      ),
+    ).pipe(
+      Effect.mapError(
+        (cause) =>
+          new RemoteEnvironmentAuthFetchError({
+            ...translatableMessage(msg("Could not reach the environment.")),
+            cause,
+          }),
+      ),
+    );
+
+    if (
+      response.status === 401 &&
+      authorization?._tag === "Dpop" &&
+      rejectedAccessToken === undefined
+    ) {
+      rejectedAccessToken = authorization.accessToken;
+      continue;
+    }
+
+    return response;
+  }
+});
+
+export function createAuthenticatedEnvironmentRawFetchCommand<R, E>(
+  runtime: Atom.AtomRuntime<
+    | HttpClient.HttpClient
+    | ManagedRelay.ManagedRelayDpopSigner
+    | RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization
+    | R,
+    E
+  >,
+) {
+  return createRuntimeCommand(runtime, {
+    label: "environment-data:authenticated-raw-fetch",
+    execute: (input: AuthenticatedRawFetchInput) => executeAuthenticatedEnvironmentRawFetch(input),
+  });
+}

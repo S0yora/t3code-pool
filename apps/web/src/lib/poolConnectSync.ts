@@ -1,9 +1,17 @@
+import { createAuthenticatedEnvironmentRawFetchCommand } from "@t3tools/client-runtime/state/environmentHttpAuth";
+import { runAtomCommand, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId } from "@t3tools/contracts";
+import type { HttpMethod } from "effect/http";
 import type * as Option from "effect/Option";
 import { msg } from "gt-react";
 
+import { connectionAtomRuntime } from "../connection/runtime";
 import { m } from "../i18n/messages";
+import { appAtomRegistry } from "../rpc/atomRegistry";
 import type { usePreparedConnection } from "../state/session";
+
+const authenticatedEnvironmentRawFetch =
+  createAuthenticatedEnvironmentRawFetchCommand(connectionAtomRuntime);
 
 export type PreparedEnvironmentConnection = Option.Option.Value<
   ReturnType<typeof usePreparedConnection>
@@ -104,36 +112,39 @@ export async function fetchEnvironmentPoolEndpoint<T>(
   if (!prepared) {
     return { ok: false, status: 0, data: null };
   }
-  const baseUrl = prepared.httpBaseUrl.replace(/\/+$/, "");
-  const headers = new Headers(init?.headers);
-  if (prepared.httpAuthorization?._tag === "Bearer") {
-    headers.set("Authorization", `Bearer ${prepared.httpAuthorization.token}`);
-  }
-  if (init?.body && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
-  }
-  try {
-    const response = await fetch(`${baseUrl}${path}`, {
-      ...init,
-      headers,
-      credentials: prepared.httpAuthorization === null ? "include" : "omit",
-    });
-    const text = await response.text();
-    let parsed: T | null = null;
-    try {
-      parsed = text ? (JSON.parse(text) as T) : null;
-    } catch {
-      parsed = null;
-    }
-    return { ok: response.ok, status: response.status, data: parsed };
-  } catch (error) {
+  const method = ((init?.method ?? "GET").toUpperCase() || "GET") as HttpMethod.HttpMethod;
+  const body = typeof init?.body === "string" ? init.body : undefined;
+  const result = await runAtomCommand(
+    appAtomRegistry,
+    authenticatedEnvironmentRawFetch,
+    {
+      prepared,
+      path,
+      method,
+      ...(body !== undefined ? { body } : {}),
+    },
+    { reportFailure: false },
+  );
+  if (result._tag === "Failure") {
+    const err = squashAtomCommandFailure(result);
     return {
       ok: false,
       status: 0,
       data: null,
-      error: error instanceof Error ? error.message : String(error),
+      error: err instanceof Error ? err.message : String(err),
     };
   }
+  let parsed: T | null = null;
+  try {
+    parsed = result.value.text ? (JSON.parse(result.value.text) as T) : null;
+  } catch {
+    parsed = null;
+  }
+  return {
+    ok: result.value.ok,
+    status: result.value.status,
+    data: parsed,
+  };
 }
 
 export async function fetchDirectSnapshotMeta(
