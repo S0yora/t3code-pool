@@ -10,13 +10,11 @@ import * as Result from "effect/Result";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
 import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpMethod } from "effect/http";
-import type { Atom } from "effect/reactivity";
 
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import type { PreparedConnection, PreparedHttpAuthorization } from "../connection/model.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import * as ManagedRelay from "../relay/managedRelay.ts";
-import { createRuntimeCommand } from "./runtime.ts";
 import {
   executeEnvironmentHttpRequest,
   makeEnvironmentHttpApiGroupClient,
@@ -425,18 +423,3 @@ export const executeAuthenticatedEnvironmentRawFetch = Effect.fn(
     }),
   );
 });
-
-export function createAuthenticatedEnvironmentRawFetchCommand<R, E>(
-  runtime: Atom.AtomRuntime<
-    | HttpClient.HttpClient
-    | ManagedRelay.ManagedRelayDpopSigner
-    | RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization
-    | R,
-    E
-  >,
-) {
-  return createRuntimeCommand(runtime, {
-    label: "environment-data:authenticated-raw-fetch",
-    execute: (input: AuthenticatedRawFetchInput) => executeAuthenticatedEnvironmentRawFetch(input),
-  });
-}

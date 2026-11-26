@@ -1,25 +1,68 @@
-import { createAuthenticatedEnvironmentRawFetchCommand } from "@t3tools/client-runtime/state/environmentHttpAuth";
-import { runAtomCommand, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import type { AuthenticatedRawFetchInput } from "@t3tools/client-runtime/state/environmentHttpAuth";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { HttpMethod } from "effect/http";
 import type * as Option from "effect/Option";
 import { msg } from "gt-react";
 
-import { connectionAtomRuntime } from "../connection/runtime";
 import { m } from "../i18n/messages";
-import { appAtomRegistry } from "../rpc/atomRegistry";
 import type { usePreparedConnection } from "../state/session";
 
-let cachedAuthenticatedRawFetch: ReturnType<
-  typeof createAuthenticatedEnvironmentRawFetchCommand
-> | null = null;
+let cachedDpopRuntimePromise: Promise<{
+  readonly run: (input: AuthenticatedRawFetchInput) => Promise<
+    | {
+        readonly ok: true;
+        readonly value: { readonly ok: boolean; readonly status: number; readonly text: string };
+      }
+    | { readonly ok: false; readonly error: string }
+  >;
+}> | null = null;
 
-function getAuthenticatedRawFetchCommand() {
-  if (cachedAuthenticatedRawFetch === null) {
-    cachedAuthenticatedRawFetch =
-      createAuthenticatedEnvironmentRawFetchCommand(connectionAtomRuntime);
+function getDpopRunner() {
+  if (cachedDpopRuntimePromise === null) {
+    cachedDpopRuntimePromise = Promise.all([
+      import("@t3tools/client-runtime/state/environmentHttpAuth"),
+      import("@t3tools/client-runtime/state/runtime"),
+      import("../connection/runtime"),
+      import("../rpc/atomRegistry"),
+    ]).then(
+      ([
+        { executeAuthenticatedEnvironmentRawFetch },
+        { createRuntimeCommand, runAtomCommand, squashAtomCommandFailure },
+        { connectionAtomRuntime },
+        { appAtomRegistry },
+      ]) => {
+        const command = createRuntimeCommand(connectionAtomRuntime, {
+          label: "environment-data:pool-sync-dpop-fetch",
+          execute: (req: AuthenticatedRawFetchInput) =>
+            executeAuthenticatedEnvironmentRawFetch(req),
+        });
+        return {
+          run: async (input: AuthenticatedRawFetchInput) => {
+            const result = await runAtomCommand(appAtomRegistry, command, input, {
+              reportFailure: false,
+            });
+            if (result._tag === "Failure") {
+              const err = squashAtomCommandFailure(result);
+              return {
+                ok: false as const,
+                error: err instanceof Error ? err.message : String(err),
+              };
+            }
+            return {
+              ok: true as const,
+              value: result.value,
+            };
+          },
+        };
+      },
+    );
   }
-  return cachedAuthenticatedRawFetch;
+  return cachedDpopRuntimePromise;
+}
+
+async function runDpopRawFetch(input: AuthenticatedRawFetchInput) {
+  const runner = await getDpopRunner();
+  return runner.run(input);
 }
 
 export type PreparedEnvironmentConnection = Option.Option.Value<
@@ -124,24 +167,18 @@ export async function fetchEnvironmentPoolEndpoint<T>(
   if (prepared.httpAuthorization?._tag === "Dpop") {
     const method = ((init?.method ?? "GET").toUpperCase() || "GET") as HttpMethod.HttpMethod;
     const body = typeof init?.body === "string" ? init.body : undefined;
-    const result = await runAtomCommand(
-      appAtomRegistry,
-      getAuthenticatedRawFetchCommand(),
-      {
-        prepared,
-        path,
-        method,
-        ...(body !== undefined ? { body } : {}),
-      },
-      { reportFailure: false },
-    );
-    if (result._tag === "Failure") {
-      const err = squashAtomCommandFailure(result);
+    const result = await runDpopRawFetch({
+      prepared,
+      path,
+      method,
+      ...(body !== undefined ? { body } : {}),
+    });
+    if (!result.ok) {
       return {
         ok: false,
         status: 0,
         data: null,
-        error: err instanceof Error ? err.message : String(err),
+        error: result.error,
       };
     }
     let parsed: T | null = null;
