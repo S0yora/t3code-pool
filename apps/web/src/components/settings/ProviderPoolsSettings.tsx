@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import {
   AuthProvidersManageScope,
   type EnvironmentId,
@@ -25,11 +26,26 @@ import {
   RefreshCwIcon,
   XIcon,
 } from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useState, useSyncExternalStore } from "react";
 
 import { useUpdateEnvironmentSettings } from "../../hooks/useSettings";
+import {
+  fetchEnvironmentPoolEndpoint,
+  getDirectAutoSyncEnabled,
+  setDirectAutoSyncEnabled,
+  setLastSyncedFingerprint,
+  subscribeDirectAutoSyncEnabled,
+  syncProvidersBetweenEnvironments,
+} from "../../lib/poolConnectSync";
 import { cn } from "../../lib/utils";
-import { useEnvironmentScope, usePreparedConnection } from "../../state/session";
+import { useConnectedEnvironmentIds, useEnvironments } from "../../state/environments";
+import { environmentServerConfigsAtom } from "../../state/server";
+import {
+  readEnvironmentScope,
+  readPreparedConnection,
+  useEnvironmentScope,
+  usePreparedConnection,
+} from "../../state/session";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import {
   AlertDialog,
@@ -159,51 +175,6 @@ function formatCooldownRemaining(untilMs: number, nowMs: number): string {
   return remMins > 0 ? `${hours}h ${remMins}m` : `${hours}h`;
 }
 
-async function fetchEnvironmentPoolEndpoint<T>(
-  prepared: Option.Option.Value<ReturnType<typeof usePreparedConnection>> | null,
-  path: string,
-  init?: RequestInit,
-): Promise<{
-  readonly ok: boolean;
-  readonly status: number;
-  readonly data: T | null;
-  readonly error?: string;
-}> {
-  if (!prepared) {
-    return { ok: false, status: 0, data: null };
-  }
-  const baseUrl = prepared.httpBaseUrl.replace(/\/+$/, "");
-  const headers = new Headers(init?.headers);
-  if (prepared.httpAuthorization?._tag === "Bearer") {
-    headers.set("Authorization", `Bearer ${prepared.httpAuthorization.token}`);
-  }
-  if (init?.body && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
-  }
-  try {
-    const response = await fetch(`${baseUrl}${path}`, {
-      ...init,
-      headers,
-      credentials: prepared.httpAuthorization === null ? "include" : "omit",
-    });
-    const text = await response.text();
-    let parsed: T | null = null;
-    try {
-      parsed = text ? (JSON.parse(text) as T) : null;
-    } catch {
-      parsed = null;
-    }
-    return { ok: response.ok, status: response.status, data: parsed };
-  } catch (error) {
-    return {
-      ok: false,
-      status: 0,
-      data: null,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-}
-
 export function ProviderPoolsSettings({
   environmentId,
   environmentLabel,
@@ -235,9 +206,64 @@ export function ProviderPoolsSettings({
   const [status, setStatus] = useState<PoolStatusPayload | null>(null);
   const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
   const [busyAction, setBusyAction] = useState<"push" | "pull" | "sync" | null>(null);
+  const [busyDirectPeerKey, setBusyDirectPeerKey] = useState<string | null>(null);
   const [syncAdvancedOpen, setSyncAdvancedOpen] = useState(
     () => !tokenConfigured || !passphraseConfigured,
   );
+  const { environments } = useEnvironments();
+  const connectedEnvironmentIds = useConnectedEnvironmentIds();
+  const serverConfigsByEnv = useAtomValue(environmentServerConfigsAtom);
+  const directAutoSyncEnabled = useSyncExternalStore(
+    subscribeDirectAutoSyncEnabled,
+    getDirectAutoSyncEnabled,
+    () => true,
+  );
+
+  const peerEnvironments = environments.filter(
+    (env) =>
+      env.environmentId !== environmentId &&
+      connectedEnvironmentIds.includes(env.environmentId) &&
+      readEnvironmentScope(env.environmentId, AuthProvidersManageScope),
+  );
+
+  const runDirectPeerSync = async (
+    direction: "pull" | "push",
+    peerId: EnvironmentId,
+    peerLabel: string,
+  ) => {
+    if (!prepared || busyDirectPeerKey !== null) return;
+    const peerPrepared = readPreparedConnection(peerId);
+    if (!peerPrepared) {
+      toastManager.add({
+        type: "error",
+        title: gt("Direct sync"),
+        description: gt("{peer} is not connected.", { peer: peerLabel }),
+      });
+      return;
+    }
+    const key = `${direction}:${peerId}`;
+    setBusyDirectPeerKey(key);
+    const sourcePrepared = direction === "pull" ? peerPrepared : prepared;
+    const targetPrepared = direction === "pull" ? prepared : peerPrepared;
+    const res = await syncProvidersBetweenEnvironments(sourcePrepared, targetPrepared);
+    setBusyDirectPeerKey(null);
+    if (res.ok && res.fingerprint) {
+      const srcId = direction === "pull" ? peerId : environmentId;
+      const dstId = direction === "pull" ? environmentId : peerId;
+      setLastSyncedFingerprint(srcId, dstId, res.fingerprint);
+    }
+    toastManager.add({
+      type: res.ok ? "success" : "error",
+      title:
+        direction === "pull"
+          ? gt("Pulled from {peer}", { peer: peerLabel })
+          : gt("Pushed to {peer}", { peer: peerLabel }),
+      description: res.detail,
+    });
+    if (res.ok) {
+      void refreshStatus();
+    }
+  };
 
   const refreshStatus = async () => {
     if (!prepared) return;
@@ -540,6 +566,61 @@ export function ProviderPoolsSettings({
       </SettingsSection>
 
       <SettingsSection title={gt("Pool sync")}>
+        <SettingsRow
+          title={gt("Auto-sync via T3 Connect")}
+          description={gt(
+            "Automatically copy providers, pools, and account logins from your connected Hub onto this machine (no VPN or Tailscale needed).",
+          )}
+          control={
+            <Switch
+              checked={directAutoSyncEnabled}
+              onCheckedChange={(checked) => setDirectAutoSyncEnabled(checked)}
+            />
+          }
+        />
+
+        {peerEnvironments.map((peer) => {
+          const peerConfig = serverConfigsByEnv.get(peer.environmentId);
+          const peerIsHub =
+            Boolean(peerConfig?.settings.providerPoolSync.enabled) &&
+            peerConfig?.settings.providerPoolSync.mode === "hub";
+          return (
+            <SettingsRow
+              key={`direct-peer-${peer.environmentId}`}
+              title={peerIsHub ? gt("{peer} (Hub)", { peer: peer.label }) : peer.label}
+              description={gt(
+                "Transfer all providers, pools, Codex & Antigravity logins directly over T3 Connect.",
+              )}
+              control={
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    disabled={!editable || busyDirectPeerKey !== null}
+                    onClick={() => void runDirectPeerSync("pull", peer.environmentId, peer.label)}
+                  >
+                    <CloudDownloadIcon className="size-3" aria-hidden />
+                    {busyDirectPeerKey === `pull:${peer.environmentId}`
+                      ? gt("Pulling...")
+                      : gt("Pull here")}
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    disabled={!editable || busyDirectPeerKey !== null}
+                    onClick={() => void runDirectPeerSync("push", peer.environmentId, peer.label)}
+                  >
+                    <CloudUploadIcon className="size-3" aria-hidden />
+                    {busyDirectPeerKey === `push:${peer.environmentId}`
+                      ? gt("Pushing...")
+                      : gt("Push there")}
+                  </Button>
+                </div>
+              }
+            />
+          );
+        })}
+
         <SettingsRow
           title={gt("Sync across devices")}
           description={gt(

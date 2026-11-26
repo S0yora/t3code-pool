@@ -12,7 +12,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import { ProviderPoolService } from "./ProviderPoolService.ts";
+import { PoolDirectSnapshotSchema, ProviderPoolService } from "./ProviderPoolService.ts";
 
 const utf8Encoder = new TextEncoder();
 
@@ -179,6 +179,75 @@ export const layer = Layer.mergeAll(
           : body.value.action === "pull"
             ? yield* poolService.pullEncryptedBundle
             : yield* poolService.syncNow;
+      return HttpServerResponse.jsonUnsafe(result, { status: result.ok ? 200 : 400 });
+    }),
+  ),
+  HttpRouter.add(
+    "GET",
+    "/api/pool-hub/snapshot-meta",
+    Effect.gen(function* () {
+      const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      const sessionResult = yield* environmentAuth
+        .authenticateHttpRequest(request)
+        .pipe(Effect.option);
+      if (sessionResult._tag === "None") {
+        return HttpServerResponse.jsonUnsafe({ error: "Unauthorized." }, { status: 401 });
+      }
+      if (!sessionResult.value.scopes.includes(AuthProvidersManageScope)) {
+        return HttpServerResponse.jsonUnsafe({ error: "Forbidden." }, { status: 403 });
+      }
+      const poolService = yield* ProviderPoolService;
+      const meta = yield* poolService.getDirectSnapshotMeta;
+      return HttpServerResponse.jsonUnsafe(meta, { status: 200 });
+    }),
+  ),
+  HttpRouter.add(
+    "GET",
+    "/api/pool-hub/snapshot",
+    Effect.gen(function* () {
+      const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      const sessionResult = yield* environmentAuth
+        .authenticateHttpRequest(request)
+        .pipe(Effect.option);
+      if (sessionResult._tag === "None") {
+        return HttpServerResponse.jsonUnsafe({ error: "Unauthorized." }, { status: 401 });
+      }
+      if (!sessionResult.value.scopes.includes(AuthProvidersManageScope)) {
+        return HttpServerResponse.jsonUnsafe({ error: "Forbidden." }, { status: 403 });
+      }
+      const poolService = yield* ProviderPoolService;
+      const snapshot = yield* poolService.exportDirectSnapshot;
+      return HttpServerResponse.jsonUnsafe(snapshot, { status: 200 });
+    }),
+  ),
+  HttpRouter.add(
+    "POST",
+    "/api/pool-hub/snapshot",
+    Effect.gen(function* () {
+      const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      const sessionResult = yield* environmentAuth
+        .authenticateHttpRequest(request)
+        .pipe(Effect.option);
+      if (sessionResult._tag === "None") {
+        return HttpServerResponse.jsonUnsafe({ error: "Unauthorized." }, { status: 401 });
+      }
+      if (!sessionResult.value.scopes.includes(AuthProvidersManageScope)) {
+        return HttpServerResponse.jsonUnsafe({ error: "Forbidden." }, { status: 403 });
+      }
+      const parsed = yield* HttpServerRequest.schemaBodyJson(PoolDirectSnapshotSchema).pipe(
+        Effect.option,
+      );
+      if (parsed._tag === "None") {
+        return HttpServerResponse.jsonUnsafe(
+          { error: "Invalid direct pool snapshot payload." },
+          { status: 400 },
+        );
+      }
+      const poolService = yield* ProviderPoolService;
+      const result = yield* poolService.importDirectSnapshot(parsed.value);
       return HttpServerResponse.jsonUnsafe(result, { status: result.ok ? 200 : 400 });
     }),
   ),

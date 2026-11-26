@@ -31,6 +31,7 @@ import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Hex from "effect/encoding/Hex";
 import * as FileSystem from "effect/FileSystem";
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import * as Layer from "effect/Layer";
@@ -44,6 +45,7 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
 import { forkParked } from "../serverActivation.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as AntigravityInstallation from "./AntigravityInstallation.ts";
 import * as ProviderCredentialStore from "./ProviderCredentialStore.ts";
 import * as ProviderRegistry from "./ProviderRegistry.ts";
 import { resolveAntigravityInstanceDirectories } from "./antigravityAuthSupport.ts";
@@ -156,6 +158,26 @@ const PoolVaultPayloadSchema = Schema.Struct({
 });
 type PoolVaultPayload = typeof PoolVaultPayloadSchema.Type;
 
+export const PoolDirectSnapshotSchema = Schema.Struct({
+  version: Schema.Literal(1),
+  exportedAtMs: Schema.Number,
+  fingerprint: Schema.String,
+  providerPools: Schema.Record(Schema.String, ProviderPoolConfig),
+  providerInstances: Schema.Record(Schema.String, ProviderInstanceConfig),
+  credentials: Schema.Array(SyncedCredentialRecordSchema),
+  profileFiles: Schema.optional(Schema.Array(SyncedProfileFileSchema)),
+});
+export type PoolDirectSnapshot = typeof PoolDirectSnapshotSchema.Type;
+
+export interface PoolDirectSnapshotMeta {
+  readonly fingerprint: string;
+  readonly poolCount: number;
+  readonly accountCount: number;
+  readonly credentialCount: number;
+  readonly hasSyncableData: boolean;
+  readonly isHub: boolean;
+}
+
 const PutBundleResponseSchema = Schema.Struct({
   accepted: Schema.optional(Schema.Boolean),
   updatedAtMs: Schema.optional(Schema.Number),
@@ -166,6 +188,7 @@ const decodeBundleJson = Schema.decodeUnknownOption(
 );
 const encodeBundleJson = Schema.encodeSync(Schema.fromJsonString(ProviderPoolEncryptedBundle));
 const encodeVaultPayloadJson = Schema.encodeSync(Schema.fromJsonString(PoolVaultPayloadSchema));
+const encodeUnknownJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const decodeVaultPayloadJson = Schema.decodeUnknownOption(
   Schema.fromJsonString(PoolVaultPayloadSchema),
 );
@@ -188,6 +211,7 @@ export interface PoolSyncResult {
   readonly ok: boolean;
   readonly detail: string;
   readonly updatedAtMs?: number | undefined;
+  readonly fingerprint?: string | undefined;
 }
 
 export class ProviderPoolService extends Context.Service<
@@ -213,6 +237,9 @@ export class ProviderPoolService extends Context.Service<
     readonly syncNow: Effect.Effect<PoolSyncResult>;
     readonly pushEncryptedBundle: Effect.Effect<PoolSyncResult>;
     readonly pullEncryptedBundle: Effect.Effect<PoolSyncResult>;
+    readonly getDirectSnapshotMeta: Effect.Effect<PoolDirectSnapshotMeta>;
+    readonly exportDirectSnapshot: Effect.Effect<PoolDirectSnapshot>;
+    readonly importDirectSnapshot: (snapshot: PoolDirectSnapshot) => Effect.Effect<PoolSyncResult>;
   }
 >()("t3/provider/ProviderPoolService") {}
 
@@ -230,6 +257,9 @@ const make = Effect.gen(function* () {
   const httpClient = yield* HttpClient.HttpClient;
   const secretStoreOption = yield* Effect.serviceOption(ServerSecretStore.ServerSecretStore);
   const digestOption = yield* Effect.serviceOption(Digest.Digest);
+  const antigravityInstallationOption = yield* Effect.serviceOption(
+    AntigravityInstallation.AntigravityInstallation,
+  );
   const random = yield* SecureRandom.SecureRandom;
 
   const deviceId = yield* random.uuidV4();
@@ -632,6 +662,16 @@ const make = Effect.gen(function* () {
     } satisfies PoolSyncResult;
   });
 
+  const ensureAntigravityRuntimeInstalled = Effect.fn(
+    "ProviderPoolService.ensureAntigravityRuntimeInstalled",
+  )(function* () {
+    if (Option.isNone(antigravityInstallationOption)) return;
+    const installation = antigravityInstallationOption.value;
+    const existing = yield* installation.resolve().pipe(Effect.option);
+    if (Option.isSome(existing)) return;
+    yield* installation.start.pipe(Effect.ignore, Effect.forkDetach);
+  });
+
   const pullEncryptedBundle = Effect.fn("ProviderPoolService.pullEncryptedBundle")(function* () {
     const settings = yield* settingsService.getSettings.pipe(Effect.orDie);
     const sync = settings.providerPoolSync;
@@ -741,6 +781,13 @@ const make = Effect.gen(function* () {
         ? yield* restorePoolProfileFiles(payload.profileFiles, platform)
         : 0;
 
+    if (
+      restoredProfileFiles > 0 ||
+      Object.values(payload.providerInstances).some((inst) => inst.driver === "antigravity")
+    ) {
+      yield* ensureAntigravityRuntimeInstalled();
+    }
+
     yield* Ref.set(lastAppliedBundleAtRef, bundle.updatedAtMs);
     yield* providerRegistry.refresh().pipe(Effect.ignore);
 
@@ -748,6 +795,164 @@ const make = Effect.gen(function* () {
       ok: true,
       detail: `Imported ${Object.keys(payload.providerPools).length} pool(s), ${Object.keys(payload.providerInstances).length} account(s), and ${restoredCredentials + restoredProfileFiles} credential(s).`,
       updatedAtMs: bundle.updatedAtMs,
+    } satisfies PoolSyncResult;
+  });
+
+  const computeSnapshotFingerprint = Effect.fn("ProviderPoolService.computeSnapshotFingerprint")(
+    function* (input: {
+      readonly providerPools: Readonly<Record<string, ProviderPoolConfig>>;
+      readonly providerInstances: Readonly<Record<string, ProviderInstanceConfig>>;
+      readonly credentials: ReadonlyArray<SyncedCredentialRecord>;
+      readonly profileFiles: ReadonlyArray<SyncedProfileFile>;
+    }) {
+      const normalizedInstances = Object.fromEntries(
+        Object.entries(input.providerInstances)
+          .toSorted(([a], [b]) => a.localeCompare(b))
+          .map(([id, inst]) => {
+            if (!isPlainRecord(inst.config)) return [id, inst];
+            const sanitized: Record<string, unknown> = { ...inst.config };
+            for (const key of LOCAL_ONLY_PATH_KEYS) {
+              delete sanitized[key];
+            }
+            return [id, { ...inst, config: sanitized }];
+          }),
+      );
+      const normalizedPools = Object.fromEntries(
+        Object.entries(input.providerPools).toSorted(([a], [b]) => a.localeCompare(b)),
+      );
+      const normalizedCreds = [...input.credentials]
+        .toSorted((a, b) =>
+          `${a.namespace}:${a.bindingId}`.localeCompare(`${b.namespace}:${b.bindingId}`),
+        )
+        .map((c) => `${c.namespace}:${c.bindingId}:${c.valueBase64}`);
+      const normalizedFiles = [...input.profileFiles]
+        .toSorted((a, b) =>
+          `${a.driver}:${a.instanceId}:${a.relativePath}`.localeCompare(
+            `${b.driver}:${b.instanceId}:${b.relativePath}`,
+          ),
+        )
+        .map((f) => `${f.driver}:${f.instanceId}:${f.relativePath}:${f.valueBase64}`);
+      const canonical = encodeUnknownJson({
+        pools: normalizedPools,
+        instances: normalizedInstances,
+        creds: normalizedCreds,
+        files: normalizedFiles,
+      });
+      if (Option.isSome(digestOption)) {
+        const bytes = yield* digestOption.value
+          .digest(Digest.sha256, new TextEncoder().encode(canonical))
+          .pipe(Effect.orDie);
+        return Hex.encode(bytes);
+      }
+      return `len:${canonical.length}`;
+    },
+  );
+
+  const exportDirectSnapshot = Effect.fn("ProviderPoolService.exportDirectSnapshot")(function* () {
+    const settings = yield* settingsService.getSettings.pipe(Effect.orDie);
+    const allInstanceIds = [
+      ...new Set([
+        ...(Object.keys(settings.providerInstances) as Array<ProviderInstanceId>),
+        ...Object.values(settings.providerPools).flatMap((pool) => pool.memberInstanceIds),
+      ]),
+    ];
+    const exportedInstances: Record<string, ProviderInstanceConfig> = {};
+    for (const instanceId of allInstanceIds) {
+      const entry = settings.providerInstances[instanceId];
+      if (entry) exportedInstances[instanceId] = entry;
+    }
+    const credentials = yield* collectPoolCredentials(allInstanceIds, settings.providerInstances);
+    const profileFiles = yield* collectPoolProfileFiles(allInstanceIds, settings.providerInstances);
+    const fingerprint = yield* computeSnapshotFingerprint({
+      providerPools: settings.providerPools,
+      providerInstances: exportedInstances,
+      credentials,
+      profileFiles,
+    });
+    const nowMs = yield* Clock.currentTimeMillis;
+    return {
+      version: 1,
+      exportedAtMs: nowMs,
+      fingerprint,
+      providerPools: settings.providerPools,
+      providerInstances: exportedInstances,
+      credentials,
+      ...(profileFiles.length > 0 ? { profileFiles } : {}),
+    } satisfies PoolDirectSnapshot;
+  });
+
+  const getDirectSnapshotMeta = Effect.fn("ProviderPoolService.getDirectSnapshotMeta")(
+    function* () {
+      const settings = yield* settingsService.getSettings.pipe(Effect.orDie);
+      const snapshot = yield* exportDirectSnapshot();
+      const poolCount = Object.keys(snapshot.providerPools).length;
+      const accountCount = Object.keys(snapshot.providerInstances).length;
+      const credentialCount = snapshot.credentials.length + (snapshot.profileFiles?.length ?? 0);
+      return {
+        fingerprint: snapshot.fingerprint,
+        poolCount,
+        accountCount,
+        credentialCount,
+        hasSyncableData: poolCount > 0 || credentialCount > 0 || accountCount > 0,
+        isHub: settings.providerPoolSync.enabled && settings.providerPoolSync.mode === "hub",
+      } satisfies PoolDirectSnapshotMeta;
+    },
+  );
+
+  const importDirectSnapshot = Effect.fn("ProviderPoolService.importDirectSnapshot")(function* (
+    snapshot: PoolDirectSnapshot,
+  ) {
+    const settings = yield* settingsService.getSettings.pipe(Effect.orDie);
+    const platform = yield* HostProcess.Platform;
+    const mergedInstances = mergePulledProviderInstances(
+      settings.providerInstances,
+      snapshot.providerInstances,
+      platform,
+    );
+    const mergedPools: Record<ProviderPoolId, ProviderPoolConfig> = {
+      ...settings.providerPools,
+      ...(snapshot.providerPools as Record<ProviderPoolId, ProviderPoolConfig>),
+    };
+
+    yield* settingsService
+      .updateSettings({
+        providerInstances: mergedInstances,
+        providerPools: mergedPools,
+      })
+      .pipe(Effect.ignore({ log: true }));
+
+    let restoredCredentials = 0;
+    if (Option.isSome(secretStoreOption) && Option.isSome(digestOption)) {
+      for (const cred of snapshot.credentials) {
+        const store = yield* ProviderCredentialStore.make(cred.namespace, cred.bindingId).pipe(
+          Effect.provideService(ServerSecretStore.ServerSecretStore, secretStoreOption.value),
+          Effect.provideService(Digest.Digest, digestOption.value),
+        );
+        yield* store
+          .set(new Uint8Array(Buffer.from(cred.valueBase64, "base64")))
+          .pipe(Effect.ignore({ log: true }));
+        restoredCredentials++;
+      }
+    }
+    const restoredProfileFiles =
+      snapshot.profileFiles && snapshot.profileFiles.length > 0
+        ? yield* restorePoolProfileFiles(snapshot.profileFiles, platform)
+        : 0;
+
+    if (
+      restoredProfileFiles > 0 ||
+      Object.values(snapshot.providerInstances).some((inst) => inst.driver === "antigravity")
+    ) {
+      yield* ensureAntigravityRuntimeInstalled();
+    }
+
+    yield* providerRegistry.refresh().pipe(Effect.ignore);
+
+    return {
+      ok: true,
+      detail: `Synced ${Object.keys(snapshot.providerPools).length} pool(s), ${Object.keys(snapshot.providerInstances).length} account(s), and ${restoredCredentials + restoredProfileFiles} credential(s).`,
+      updatedAtMs: snapshot.exportedAtMs,
+      fingerprint: snapshot.fingerprint,
     } satisfies PoolSyncResult;
   });
 
@@ -886,6 +1091,9 @@ const make = Effect.gen(function* () {
     syncNow: syncWithHubInternal(),
     pushEncryptedBundle: pushEncryptedBundle(),
     pullEncryptedBundle: pullEncryptedBundle(),
+    getDirectSnapshotMeta: getDirectSnapshotMeta(),
+    exportDirectSnapshot: exportDirectSnapshot(),
+    importDirectSnapshot,
   };
 });
 

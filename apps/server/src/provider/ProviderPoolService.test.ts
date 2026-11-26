@@ -17,6 +17,7 @@ import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettingsModule from "../serverSettings.ts";
+import * as AntigravityInstallation from "./AntigravityInstallation.ts";
 import { resolveAntigravityInstanceDirectories } from "./antigravityAuthSupport.ts";
 import * as ProviderRegistry from "./ProviderRegistry.ts";
 import * as ProviderPoolService from "./ProviderPoolService.ts";
@@ -462,6 +463,192 @@ describe("ProviderPoolService", () => {
         );
         expect(restoredToken).toBe(oauthTokenContent);
         expect(restoredInstallId).toBe(installIdContent);
+      }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, Digest.layerWebCrypto))),
+  );
+
+  it.effect(
+    "exports and imports direct T3 Connect snapshots with Antigravity OAuth files and auto-installs missing Antigravity CLI",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const digest = yield* Digest.Digest;
+
+        const sourceStateDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-direct-src-" });
+        const targetStateDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-direct-dst-" });
+
+        const agyId = "antigravity_direct" as ProviderInstanceId;
+        const standaloneId = "antigravity_standalone" as ProviderInstanceId;
+        const agyDriver = ProviderDriverKind.make("antigravity");
+        const poolId = ProviderPoolId.make("antigravity-pool");
+
+        const srcDirs = yield* resolveAntigravityInstanceDirectories(sourceStateDir, agyId);
+        yield* fs.makeDirectory(path.join(srcDirs.profile, "antigravity-acp"), { recursive: true });
+        yield* fs.writeFileString(
+          path.join(srcDirs.profile, "antigravity-acp", "antigravity-oauth-token"),
+          '{"token":"direct-tok","id_token_email":"direct@example.com"}',
+        );
+
+        const sourceSettings: ServerSettings = {
+          ...DEFAULT_SERVER_SETTINGS,
+          providerInstances: {
+            [agyId]: {
+              driver: agyDriver,
+              displayName: "Pooled Account",
+              enabled: true,
+              config: { binaryPath: "C:\\Users\\demo\\agy.exe" },
+            },
+            [standaloneId]: {
+              driver: agyDriver,
+              displayName: "Standalone Account",
+              enabled: true,
+              config: {},
+            },
+          },
+          providerPools: {
+            [poolId]: {
+              driver: agyDriver,
+              displayName: "Antigravity Pool",
+              enabled: true,
+              memberInstanceIds: [agyId],
+              strategy: "least_used",
+              autoFailover: true,
+              stickyThread: true,
+            },
+          },
+          providerPoolSync: {
+            ...DEFAULT_SERVER_SETTINGS.providerPoolSync,
+            enabled: true,
+            mode: "hub",
+          },
+        };
+
+        let installStartCalls = 0;
+        let targetCurrentSettings: ServerSettings = { ...DEFAULT_SERVER_SETTINGS };
+
+        const makeLayer = (
+          stateDir: string,
+          getSettingsRef: () => ServerSettings,
+          setSettingsRef: (next: ServerSettings) => void,
+          withMissingAntigravityInstall: boolean,
+        ) => {
+          const settingsLayer = Layer.succeed(ServerSettingsModule.ServerSettingsService, {
+            start: Effect.void,
+            ready: Effect.void,
+            getSettings: Effect.sync(getSettingsRef),
+            updateSettings: (patch: Partial<ServerSettings>) =>
+              Effect.sync(() => {
+                const next = { ...getSettingsRef(), ...patch };
+                setSettingsRef(next);
+                return next;
+              }),
+            updateProviderInstance: () => Effect.sync(getSettingsRef),
+            streamChanges: Stream.empty,
+            subscribeChanges: Effect.succeed(Stream.empty),
+            withSettingsSnapshot: <A, E, R>(
+              use: (snapshot: ServerSettings) => Effect.Effect<A, E, R>,
+            ) => use(getSettingsRef()),
+          } as unknown as ServerSettingsModule.ServerSettingsService["Service"]);
+          const registryLayer = Layer.succeed(ProviderRegistry.ProviderRegistry, {
+            getProviders: Effect.succeed([]),
+            refresh: () => Effect.succeed([]),
+            streamChanges: Stream.empty,
+          } as unknown as ProviderRegistry.ProviderRegistry["Service"]);
+          const configLayer = Layer.succeed(ServerConfig.ServerConfig, {
+            stateDir,
+          } as unknown as ServerConfig.ServerConfig["Service"]);
+          const randomLayer = Layer.succeed(
+            SecureRandom.SecureRandom,
+            SecureRandom.make((size) => new Uint8Array(size).fill(7)),
+          );
+          const base = ProviderPoolService.layer.pipe(
+            Layer.provide(settingsLayer),
+            Layer.provide(registryLayer),
+            Layer.provide(configLayer),
+            Layer.provide(randomLayer),
+            Layer.provide(Layer.succeed(Digest.Digest, digest)),
+            Layer.provide(NodeServices.layer),
+          );
+          if (!withMissingAntigravityInstall) return base;
+          const agyInstallLayer = Layer.succeed(AntigravityInstallation.AntigravityInstallation, {
+            resolve: () =>
+              Effect.fail(
+                new AntigravityInstallation.AntigravityInstallationError({
+                  operation: "resolve",
+                  detail: "not installed",
+                }),
+              ),
+            start: Effect.sync(() => {
+              installStartCalls++;
+              return {
+                driver: agyDriver,
+                operationId: null,
+                phase: "downloading",
+                downloadedBytes: 0,
+                totalBytes: null,
+                version: null,
+                installedVersion: null,
+                canRemove: false,
+                message: null,
+              };
+            }),
+          } as unknown as AntigravityInstallation.AntigravityInstallation["Service"]);
+          return base.pipe(Layer.provide(agyInstallLayer));
+        };
+
+        const { meta, snapshot } = yield* Effect.gen(function* () {
+          const svc = yield* ProviderPoolService.ProviderPoolService;
+          const metaResult = yield* svc.getDirectSnapshotMeta;
+          const snapResult = yield* svc.exportDirectSnapshot;
+          return { meta: metaResult, snapshot: snapResult };
+        }).pipe(
+          Effect.provide(
+            makeLayer(
+              sourceStateDir,
+              () => sourceSettings,
+              () => {},
+              false,
+            ),
+          ),
+        );
+
+        expect(meta.isHub).toBe(true);
+        expect(meta.hasSyncableData).toBe(true);
+        expect(meta.poolCount).toBe(1);
+        expect(meta.accountCount).toBe(2);
+        expect(meta.credentialCount).toBe(1);
+        expect(meta.fingerprint).toBe(snapshot.fingerprint);
+
+        const imported = yield* Effect.gen(function* () {
+          const svc = yield* ProviderPoolService.ProviderPoolService;
+          const res = yield* svc.importDirectSnapshot(snapshot);
+          // Give the detached background install fiber a tick to start.
+          yield* Effect.yieldNow;
+          return res;
+        }).pipe(
+          Effect.provide(
+            makeLayer(
+              targetStateDir,
+              () => targetCurrentSettings,
+              (next) => {
+                targetCurrentSettings = next;
+              },
+              true,
+            ),
+          ),
+        );
+
+        expect(imported.ok).toBe(true);
+        expect(imported.fingerprint).toBe(snapshot.fingerprint);
+        expect(Object.keys(targetCurrentSettings.providerInstances)).toEqual([agyId, standaloneId]);
+        expect(Object.keys(targetCurrentSettings.providerPools)).toEqual([poolId]);
+        expect(installStartCalls).toBe(1);
+
+        const targetDirs = yield* resolveAntigravityInstanceDirectories(targetStateDir, agyId);
+        const restoredToken = yield* fs.readFileString(
+          path.join(targetDirs.profile, "antigravity-acp", "antigravity-oauth-token"),
+        );
+        expect(restoredToken).toBe('{"token":"direct-tok","id_token_email":"direct@example.com"}');
       }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, Digest.layerWebCrypto))),
   );
 });
