@@ -320,96 +320,110 @@ export const executeAuthenticatedEnvironmentRawFetch = Effect.fn(
   let httpBaseUrl = input.prepared.httpBaseUrl;
   let rejectedAccessToken: string | undefined;
   const normalizedPath = input.path.startsWith("/") ? input.path : `/${input.path}`;
+  const timeoutMs = input.timeoutMs ?? 15_000;
 
-  for (;;) {
-    let authorization = input.prepared.httpAuthorization;
-    if (authorization?._tag === "Dpop") {
-      if (Option.isNone(remote)) {
-        return yield* new RemoteEnvironmentAuthFetchError({
-          ...translatableMessage(
-            msg("No relay authorization service is available for the environment request."),
-          ),
-          cause: input.prepared.target._tag,
-        });
-      }
-      const authFetchError = (cause: unknown) =>
-        new RemoteEnvironmentAuthFetchError({
-          ...translatableMessage(msg("Could not authorize the environment request.")),
-          cause,
-        });
-      const direct = authorization.directConnection;
-      if (direct !== undefined) {
-        authorization = yield* remote.value
-          .authorizeDirectDpopHttp(direct, rejectedAccessToken)
-          .pipe(Effect.mapError(authFetchError));
-      } else {
-        const current = yield* remote.value
-          .authorizeDpopHttp({
-            expectedEnvironmentId: input.prepared.environmentId,
-            ...(rejectedAccessToken === undefined ? {} : { rejectedAccessToken }),
-          })
-          .pipe(Effect.mapError(authFetchError));
-        if (input.prepared.target._tag === "RelayConnectionTarget") {
-          httpBaseUrl = current.httpBaseUrl;
+  return yield* Effect.gen(function* () {
+    for (;;) {
+      let authorization = input.prepared.httpAuthorization;
+      if (authorization?._tag === "Dpop") {
+        if (Option.isNone(remote)) {
+          return yield* new RemoteEnvironmentAuthFetchError({
+            ...translatableMessage(
+              msg("No relay authorization service is available for the environment request."),
+            ),
+            cause: input.prepared.target._tag,
+          });
         }
-        authorization = current.httpAuthorization;
+        const authFetchError = (cause: unknown) =>
+          new RemoteEnvironmentAuthFetchError({
+            ...translatableMessage(msg("Could not authorize the environment request.")),
+            cause,
+          });
+        const direct = authorization.directConnection;
+        if (direct !== undefined) {
+          authorization = yield* remote.value
+            .authorizeDirectDpopHttp(direct, rejectedAccessToken)
+            .pipe(Effect.mapError(authFetchError));
+        } else {
+          const current = yield* remote.value
+            .authorizeDpopHttp({
+              expectedEnvironmentId: input.prepared.environmentId,
+              ...(rejectedAccessToken === undefined ? {} : { rejectedAccessToken }),
+            })
+            .pipe(Effect.mapError(authFetchError));
+          if (input.prepared.target._tag === "RelayConnectionTarget") {
+            httpBaseUrl = current.httpBaseUrl;
+          }
+          authorization = current.httpAuthorization;
+        }
       }
-    }
 
-    const requestUrl = `${httpBaseUrl.replace(/\/+$/, "")}${normalizedPath}`;
-    const authHeaders = yield* buildEnvironmentAuthHeaders(
-      authorization,
-      input.method,
-      requestUrl,
-      signer,
-    );
-    let request = HttpClientRequest.make(input.method)(requestUrl);
-    if (authHeaders.authorization) {
-      request = HttpClientRequest.setHeader(request, "Authorization", authHeaders.authorization);
-    }
-    if (authHeaders.dpop) {
-      request = HttpClientRequest.setHeader(request, "DPoP", authHeaders.dpop);
-    }
-    if (input.body !== undefined) {
-      request = HttpClientRequest.bodyText(request, input.body, "application/json");
-    }
+      const requestUrl = `${httpBaseUrl.replace(/\/+$/, "")}${normalizedPath}`;
+      const authHeaders = yield* buildEnvironmentAuthHeaders(
+        authorization,
+        input.method,
+        requestUrl,
+        signer,
+      );
+      let request = HttpClientRequest.make(input.method)(requestUrl);
+      if (authHeaders.authorization) {
+        request = HttpClientRequest.setHeader(request, "Authorization", authHeaders.authorization);
+      }
+      if (authHeaders.dpop) {
+        request = HttpClientRequest.setHeader(request, "DPoP", authHeaders.dpop);
+      }
+      if (input.body !== undefined) {
+        request = HttpClientRequest.bodyText(request, input.body, "application/json");
+      }
 
-    const response = yield* withEnvironmentRequestInit(
-      authorization,
-      undefined,
-      httpClient.execute(request).pipe(
-        Effect.flatMap((res) =>
-          res.text.pipe(
-            Effect.orElseSucceed(() => ""),
-            Effect.map((text): AuthenticatedRawFetchResult => ({
-              ok: res.status >= 200 && res.status < 300,
-              status: res.status,
-              text,
-            })),
+      const response = yield* withEnvironmentRequestInit(
+        authorization,
+        undefined,
+        httpClient.execute(request).pipe(
+          Effect.flatMap((res) =>
+            res.text.pipe(
+              Effect.orElseSucceed(() => ""),
+              Effect.map((text): AuthenticatedRawFetchResult => ({
+                ok: res.status >= 200 && res.status < 300,
+                status: res.status,
+                text,
+              })),
+            ),
           ),
         ),
-      ),
-    ).pipe(
-      Effect.mapError(
-        (cause) =>
-          new RemoteEnvironmentAuthFetchError({
-            ...translatableMessage(msg("Could not reach the environment.")),
-            cause,
-          }),
-      ),
-    );
+      ).pipe(
+        Effect.mapError(
+          (cause) =>
+            new RemoteEnvironmentAuthFetchError({
+              ...translatableMessage(msg("Could not reach the environment.")),
+              cause,
+            }),
+        ),
+      );
 
-    if (
-      response.status === 401 &&
-      authorization?._tag === "Dpop" &&
-      rejectedAccessToken === undefined
-    ) {
-      rejectedAccessToken = authorization.accessToken;
-      continue;
+      if (
+        response.status === 401 &&
+        authorization?._tag === "Dpop" &&
+        rejectedAccessToken === undefined
+      ) {
+        rejectedAccessToken = authorization.accessToken;
+        continue;
+      }
+
+      return response;
     }
-
-    return response;
-  }
+  }).pipe(
+    Effect.timeoutOrElse({
+      duration: timeoutMs,
+      orElse: () =>
+        Effect.fail(
+          new RemoteEnvironmentAuthTimeoutError({
+            requestUrl: `${httpBaseUrl.replace(/\/+$/, "")}${normalizedPath}`,
+            timeoutMs,
+          }),
+        ),
+    }),
+  );
 });
 
 export function createAuthenticatedEnvironmentRawFetchCommand<R, E>(
